@@ -38,23 +38,23 @@ Fill in from `scripts/g0_probe.py` by Sunday 12:00 (hard stop 13:00). Never past
 
 | Id | Checks | Pass when | Result |
 |---|---|---|---|
-| S1.1 | new project | SANDBOX badge, no billing account | [PASS or FAIL] |
-| S1.2 | key at `keys/sa.json` | `git check-ignore` prints its path | [PASS or FAIL] |
-| S1.3 | `uv run dbt debug` | Core 1.12.6, bigquery 1.12.1, "All checks passed!" | [PASS or FAIL] |
-| P1 | a CTAS and a view in `probe` | both succeed | [PASS or FAIL] |
-| P2 | `INSERT INTO probe.t (x) VALUES (2)` | refused with "DML queries are not allowed in the free tier" | [PASS or FAIL] |
-| P3 | two `WRITE_TRUNCATE` loads into `probe.raw_pay$<yesterday>`, one into another day | only the second load's row remains; the other day untouched; timestamps load | [PASS or FAIL] |
-| P4 | a wrong-day row into `$<yesterday>` | refused | [PASS or FAIL] |
-| P5 | partition delete, then COUNT | 0 | [PASS or FAIL] |
-| P6 | expirations | 60 days (5184000000 ms); no table expiration on `raw_pay` | [PASS or FAIL] |
-| P7 | `__TABLES__`, `INFORMATION_SCHEMA.TABLE_STORAGE` | one readable | [which one] |
-| F1 | one Frankfurter request | HTTP 200; weekday rows only | [PASS or FAIL] |
-| P8 | optional `copy_partitions` model, run twice | "Copying table(s)"; no "merge into" or "insert into" | [PASS, FAIL or not run] |
+| S1.1 | new project | SANDBOX badge, no billing account | PASS |
+| S1.2 | key at `keys/sa.json` | `git check-ignore` prints its path | PASS |
+| S1.3 | `uv run dbt debug` | Core 1.12.6, bigquery 1.12.1, "All checks passed!" | PASS |
+| P1 | a CTAS and a view in `probe` | both succeed | PASS |
+| P2 | `INSERT INTO probe.t (x) VALUES (2)` | refused with "DML queries are not allowed in the free tier" | PASS |
+| P3 | two `WRITE_TRUNCATE` loads into `probe.raw_pay$<yesterday>`, one into another day | only the second load's row remains; the other day untouched; timestamps load | PASS |
+| P4 | a wrong-day row into `$<yesterday>` | refused | PASS |
+| P5 | partition delete, then COUNT | 0 | PASS |
+| P6 | expirations | 60 days (5184000000 ms); no table expiration on `raw_pay` | PASS |
+| P7 | `__TABLES__`, `INFORMATION_SCHEMA.TABLE_STORAGE` | one readable | PASS: `__TABLES__` readable; TABLE_STORAGE not enabled for the project |
+| F1 | one Frankfurter request | HTTP 200; weekday rows only | PASS |
+| P8 | optional `copy_partitions` model, run twice | "Copying table(s)"; no "merge into" or "insert into" | not run |
 
-- P2 error text, verbatim from your own run: `[paste here]`
-- Write path: [decorator loads | daily shard tables]. Authentication: [service-account key | ADC].
-- Notes: empty-day rule (P5) [...]; storage source (P7) [...]; FX fetch (F1) [live task | committed JSON].
-- Probes run at: [YYYY-MM-DD HH:MM UTC]
+- P2 error text, verbatim from your own run: `403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled`
+- Write path: decorator loads. Authentication: service-account key.
+- Notes: empty-day rule (P5) partition delete; storage source (P7) `__TABLES__`; FX fetch (F1) live task.
+- Probes run at: 2026-11-01 15:03 UTC
 
 ## Consequences
 

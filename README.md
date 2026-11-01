@@ -378,24 +378,24 @@ The BigQuery sandbox has no billing account. It refuses DML (INSERT, UPDATE, DEL
 FILL: Copy the results from ADR-0001, heading "G0 results" (docs/adr/0001-warehouse-bigquery-sandbox.md). If P3 failed and you used daily shard tables, also update "Data model", "How a run works" and ADR-0002.
 -->
 
-| Id | What it checks | Pass means | Result ([date]) |
+| Id | What it checks | Pass means | Result (2026-11-01) |
 |---|---|---|---|
-| S1.1 | personal account, "No organization", new project | SANDBOX badge, no billing account | [result] |
-| S1.2 | service account `lvs-pipeline` and its JSON key | key saved; `git check-ignore keys/sa.json` prints the path | [result] |
-| S1.3 | host venv and dbt | Core 1.12.6 and bigquery 1.12.1; `uv run dbt debug` passes | [result] |
-| P1 | `CREATE OR REPLACE TABLE` and a view | both succeed | [result] |
-| P2 | one `INSERT` | refused with "DML queries are not allowed in the free tier" | [result] |
-| P3 | two `WRITE_TRUNCATE` loads into `probe.raw_pay$<yesterday>`, then one load into another day | yesterday holds only the second file's row; the other day is untouched | [result] |
-| P4 | a row dated the day before, loaded into `$<yesterday>` | refused: the row does not match the partition | [result] |
-| P5 | `delete_table` on `probe.raw_pay$<yesterday>` | that day has 0 rows | [result] |
-| P6 | dataset and table expiration settings | 60 days; no table-level expiration on the partitioned table | [result] |
-| P7 | `probe.__TABLES__` and `region-us.INFORMATION_SCHEMA.TABLE_STORAGE` | at least one is readable | [result] |
-| F1 | one Frankfurter request | HTTP 200, a flat list of rows, weekdays only | [result] |
-| P8 (optional) | dbt `insert_overwrite` with `copy_partitions: true`, run twice | "Copying table(s)" in the dbt log; no `merge into` or `insert into` | [result] |
+| S1.1 | personal account, "No organization", new project | SANDBOX badge, no billing account | PASS |
+| S1.2 | service account `lvs-pipeline` and its JSON key | key saved; `git check-ignore keys/sa.json` prints the path | PASS |
+| S1.3 | host venv and dbt | Core 1.12.6 and bigquery 1.12.1; `uv run dbt debug` passes | PASS |
+| P1 | `CREATE OR REPLACE TABLE` and a view | both succeed | PASS |
+| P2 | one `INSERT` | refused with "DML queries are not allowed in the free tier" | PASS |
+| P3 | two `WRITE_TRUNCATE` loads into `probe.raw_pay$<yesterday>`, then one load into another day | yesterday holds only the second file's row; the other day is untouched | PASS |
+| P4 | a row dated the day before, loaded into `$<yesterday>` | refused: the row does not match the partition | PASS |
+| P5 | `delete_table` on `probe.raw_pay$<yesterday>` | that day has 0 rows | PASS |
+| P6 | dataset and table expiration settings | 60 days; no table-level expiration on the partitioned table | PASS |
+| P7 | `probe.__TABLES__` and `region-us.INFORMATION_SCHEMA.TABLE_STORAGE` | at least one is readable | PASS: `__TABLES__` readable |
+| F1 | one Frankfurter request | HTTP 200, a flat list of rows, weekdays only | PASS |
+| P8 (optional) | dbt `insert_overwrite` with `copy_partitions: true`, run twice | "Copying table(s)" in the dbt log; no `merge into` or `insert into` | not run |
 
 The DML refusal, exactly as P2 printed it (first line):
 
-> [WRITE: paste the first line of the refusal message from P2]
+> 403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.
 
 What the results decided: [WRITE: 1-2 sentences: the write path and the authentication you chose, from ADR-0001]
 
