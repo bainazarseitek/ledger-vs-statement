@@ -1,0 +1,7 @@
+name: ledger_vs_statement
+version: "1.0.0"
+profile: ledger_vs_statement
+require-dbt-version: [">=1.12.6", "<1.13.0"]
+
+flags:
+  send_anonymous_usage_stats: false

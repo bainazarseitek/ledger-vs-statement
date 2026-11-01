@@ -1,0 +1,18 @@
+[project]
+name = "ledger-vs-statement"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "dbt-bigquery==1.12.1",
+    "dbt-core==1.12.6",
+    "dbt-core-experimental-parser==2.0.8",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.13",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
