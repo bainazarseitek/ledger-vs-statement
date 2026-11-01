@@ -374,10 +374,6 @@ Each mutation was applied on a scratch branch; `dbt run` and then `dbt test` wer
 
 The BigQuery sandbox has no billing account. It refuses DML (INSERT, UPDATE, DELETE, MERGE), streaming inserts, the Data Transfer Service (so no scheduled queries) and Cloud Storage. Every table, view and partition expires after 60 days, and storage is a lifetime 10 GiB that deleting data does not give back. Setup details: [`docs/specs/bigquery_sandbox_and_costs.md`](docs/specs/bigquery_sandbox_and_costs.md).
 
-<!--
-FILL: Copy the results from ADR-0001, heading "G0 results" (docs/adr/0001-warehouse-bigquery-sandbox.md). If P3 failed and you used daily shard tables, also update "Data model", "How a run works" and ADR-0002.
--->
-
 | Id | What it checks | Pass means | Result (2026-11-01) |
 |---|---|---|---|
 | S1.1 | personal account, "No organization", new project | SANDBOX badge, no billing account | PASS |
