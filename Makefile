@@ -11,7 +11,7 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint check
+.PHONY: doctor setup lint check probe
 
 doctor:
 	which -a dbt
@@ -29,3 +29,6 @@ lint:
 
 check: lint
 	@test -z "$$(git ls-files keys .env)" || { echo "check: keys/ or .env is tracked by git" >&2; exit 1; }
+
+probe:
+	uv run python scripts/g0_probe.py $(ARGS)
