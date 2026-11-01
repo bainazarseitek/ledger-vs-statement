@@ -11,7 +11,7 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint check probe bq-setup up down smoke
+.PHONY: doctor setup lint test check probe bq-setup day up down smoke
 
 doctor:
 	which -a dbt
@@ -28,7 +28,10 @@ setup:
 lint:
 	uv run ruff check .
 
-check: lint
+test:
+	uv run pytest
+
+check: lint test
 	@test -z "$$(git ls-files keys .env)" || { echo "check: keys/ or .env is tracked by git" >&2; exit 1; }
 
 probe:
@@ -36,6 +39,10 @@ probe:
 
 bq-setup:
 	uv run python -m recon.cli bq-setup
+
+day:
+	@test -n "$(DATE)" || { echo "day: set DATE=YYYY-MM-DD" >&2; exit 1; }
+	uv run python -m recon.cli generate --date $(DATE)
 
 up:
 	docker compose up -d
