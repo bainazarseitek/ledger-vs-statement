@@ -1,0 +1,152 @@
+{
+  "run_utc": "2026-11-01T15:03:16+00:00",
+  "plan_b": false,
+  "results": [
+    {
+      "id": "P1",
+      "status": "PASS",
+      "detail": "CTAS and view ran; view returned [{'x': 1}]",
+      "evidence": [
+        {
+          "x": 1
+        }
+      ],
+      "error_text": null
+    },
+    {
+      "id": "P2",
+      "status": "PASS",
+      "detail": "INSERT refused as expected",
+      "evidence": null,
+      "error_text": "403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled, message: Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.\n\nLocation: US\nJob ID: 4ae61595-e61f-4fd3-845c-be58f4264084\n"
+    },
+    {
+      "id": "P3",
+      "status": "PASS",
+      "detail": "2026-10-31 holds only file B's row; 2026-10-30 untouched",
+      "evidence": [
+        [
+          "2026-10-30",
+          1,
+          7,
+          "2026-10-30 00:00:00+00:00"
+        ],
+        [
+          "2026-10-31",
+          1,
+          99,
+          "2026-10-31 12:00:00+00:00"
+        ]
+      ],
+      "error_text": null
+    },
+    {
+      "id": "P4",
+      "status": "PASS",
+      "detail": "refused = True, table unchanged = True",
+      "evidence": [
+        [
+          "2026-10-30",
+          1,
+          7
+        ],
+        [
+          "2026-10-31",
+          1,
+          99
+        ]
+      ],
+      "error_text": "400 Some rows belong to different partitions rather than destination partition; reason: invalid, message: Some rows belong to different partitions rather than destination partition"
+    },
+    {
+      "id": "P5",
+      "status": "PASS",
+      "detail": "after deleting 2026-10-31: [(datetime.date(2026, 10, 30), 1)]",
+      "evidence": [
+        [
+          "2026-10-30",
+          1
+        ]
+      ],
+      "error_text": null
+    },
+    {
+      "id": "P6",
+      "status": "PASS",
+      "detail": "expirations as expected",
+      "evidence": {
+        "dataset_location": "US",
+        "default_table_expiration_ms": 5184000000,
+        "default_partition_expiration_ms": 5184000000,
+        "raw_pay_partition_expiration_ms": 5184000000,
+        "raw_pay_table_expires": null,
+        "t_table_expires": "2026-12-31 15:02:40.431000+00:00"
+      },
+      "error_text": null
+    },
+    {
+      "id": "P7",
+      "status": "PASS",
+      "detail": "readable: ['__TABLES__']",
+      "evidence": {
+        "__TABLES__": {
+          "readable": true,
+          "rows": 3
+        },
+        "TABLE_STORAGE": {
+          "readable": false,
+          "error": "400 INFORMATION_SCHEMA.TABLE_STORAGE hasn't been enabled for project <project>.\nConsider using one of the following SQL statements to enable data collection:\n  ALTER PROJECT `<project>`\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nOr to enable for the entire organization:\n  ALTER ORGANIZATION\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nNote that if you need to query the _BY_ORGANIZATION tables,\nuse the ALTER ORGANIZATION statement in order to see all tables in the organization.\nYou will need the bigquery.config.update permission on the organization or project\nin order to run the above SQL statements.\nThe bigquery.admin role includes this permission.\n\nAfter enabling, please allow around 1 day for the complete historical data to become available.\n; reason: invalid, message: INFORMATION_SCHEMA.TABLE_STORAGE hasn't been enabled for project <project>.\nConsider using one of the following SQL statements to enable data collection:\n  ALTER PROJECT `<project>`\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nOr to enable for the entire organization:\n  ALTER ORGANIZATION\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nNote that if you need to query the _BY_ORGANIZATION tables,\nuse the ALTER ORGANIZATION statement in order to see all tables in the organization.\nYou will need the bigquery.config.update permission on the organization or project\nin order to run the above SQL statements.\nThe bigquery.admin role includes this permission.\n\nAfter enabling, please allow around 1 day for the complete historical data to become available.\n\n\nLocation: US\nJob ID: c82bcfeb-4cff-4218-a1a2-8e1917dbc322\n"
+        }
+      },
+      "error_text": null
+    },
+    {
+      "id": "F1",
+      "status": "PASS",
+      "detail": "HTTP 200, 6 rows for 2026-10-25..2026-10-31",
+      "evidence": {
+        "url": "https://api.frankfurter.dev/v2/rates?providers=nbk&base=USD&quotes=KZT&from=2026-10-25&to=2026-10-31",
+        "status": 200,
+        "rates": [
+          {
+            "date": "2026-10-23",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "447.94"
+          },
+          {
+            "date": "2026-10-26",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "451.05"
+          },
+          {
+            "date": "2026-10-27",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "451.05"
+          },
+          {
+            "date": "2026-10-28",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "455.63"
+          },
+          {
+            "date": "2026-10-29",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "457.09"
+          },
+          {
+            "date": "2026-10-30",
+            "base": "USD",
+            "quote": "KZT",
+            "rate": "453.71"
+          }
+        ]
+      },
+      "error_text": null
+    }
+  ]
+}

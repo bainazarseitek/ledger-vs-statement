@@ -1,0 +1,3 @@
+dbt-core==1.12.6
+dbt-bigquery==1.12.1
+dbt-core-experimental-parser==2.0.8
