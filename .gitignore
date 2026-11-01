@@ -1,0 +1,15 @@
+keys/
+.env
+landing/*
+!landing/fx/
+runs/
+logs/
+config/airflow.cfg
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
