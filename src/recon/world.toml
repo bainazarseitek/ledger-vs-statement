@@ -1,0 +1,43 @@
+# SYNTHETIC world parameters for src/recon/generator.py. Illustrative assumptions, not measurements.
+# Everything here is hidden from dbt, except statement_grace_days (a copy of the dbt var).
+# Rates are in basis points (bp): 100 bp = 1%, 10000 bp = 100%.
+
+generator_version = "1.0.0"   # written into every answer-key row; bump it whenever the output changes
+lookback_days = 5             # a run recomputes booking days R-5..R; arrivals need at most R-3
+statement_grace_days = 1      # days after the latest contract lag before a missing line counts as missing; equals the dbt var
+
+[volume]
+mean_per_day = { mid_usd_01 = 130, mid_kzt_01 = 70 }   # average captures per booking day per merchant account
+jitter_pct = 10                                         # the daily count is drawn uniformly within plus or minus 10% of the mean
+
+[plans]
+order = ["p1w", "p4w", "p12w"]   # 1-week, 4-week and 12-week plans; every plan list below follows this order
+weight_pct = [30, 50, 20]        # plan mix in percent; must sum to 100
+
+[plans.price_minor]
+USD = [699, 1999, 3999]               # prices in cents: 6.99, 19.99 and 39.99 USD
+KZT = [349000, 999000, 1999000]       # prices in tiyn: 3,490, 9,990 and 19,990 KZT
+
+[time]
+# weight of each local hour 0..23 on the merchant account's own clock: quiet at night, peak in the evening
+local_hour_weights = [3, 2, 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 7, 8, 9, 9, 7, 5]
+
+[webhooks]
+first_delivery_delay_s = [1, 30]       # seconds from capture to the first webhook delivery
+redelivery_bp = 400                    # D1: 4% of capture events are delivered more than once
+redelivery_one_copy_bp = 7500          # a D1 event gets 1 extra copy 75% of the time, otherwise 2
+redelivery_delay_s = [60, 21600]       # each extra copy arrives 1 minute to 6 hours after the first delivery
+
+[settlement]
+lag_one_day_bp = 9000                  # B2: 90% of statement lines arrive 1 day after the accounting date, the rest 2 days
+
+[defects]
+missing_in_statement_bp = 50           # D2: 0.5% of payments are never settled
+missing_in_ledger_bp = 40              # D3: 0.4% of payments lose every webhook delivery but are settled
+amount_mismatch_bp = 40                # D4: 0.4% of payments settle at a different gross amount
+amount_delta_bp = [100, 2000]          # D4 size: the gross differs by 1% to 20%
+fee_overcharge_bp = 100                # D5: 1% of settled lines are charged more than the contract fee
+combo_fee_overcharge_bp = 2500         # 25% of D4 lines are also overcharged (D4 plus D5)
+
+[fee_noise]
+spike_bp = 100                         # B3: 1% of normal lines get a fee spike at or above the tolerance; the rest stay inside half of it

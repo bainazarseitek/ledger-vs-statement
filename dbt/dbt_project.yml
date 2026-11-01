@@ -5,3 +5,6 @@ require-dbt-version: [">=1.12.6", "<1.13.0"]
 
 flags:
   send_anonymous_usage_stats: false
+
+vars:
+  statement_grace_days: 1
