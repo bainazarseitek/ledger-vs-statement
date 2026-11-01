@@ -11,13 +11,14 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint check probe
+.PHONY: doctor setup lint check probe bq-setup up down smoke
 
 doctor:
 	which -a dbt
 	@v="$$(uv run dbt --version)"; echo "$$v"; \
 	echo "$$v" | grep -q -e '- installed: 1.12.6' && echo "$$v" | grep -q -e '- bigquery: 1.12.1' \
 	  || { echo "doctor: need dbt-core 1.12.6 and dbt-bigquery 1.12.1 from the project venv" >&2; exit 1; }
+	$(AIRFLOW) pools get dbt_serial
 
 setup:
 	uv sync
@@ -32,3 +33,16 @@ check: lint
 
 probe:
 	uv run python scripts/g0_probe.py $(ARGS)
+
+bq-setup:
+	uv run python -m recon.cli bq-setup
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+smoke:
+	$(AIRFLOW) dags unpause smoke_bigquery
+	$(AIRFLOW) dags trigger smoke_bigquery

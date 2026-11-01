@@ -1,0 +1,19 @@
+{
+  "table": "fx_rates",
+  "description": "REAL: NBK rates via Frankfurter v2. One row per rate observation returned by the fetch made for _arrival_date.",
+  "labels": {"data_origin": "real"},
+  "time_partitioning": {"type": "DAY", "field": "_arrival_date"},
+  "clustering_fields": ["provider"],
+  "fields": [
+    {"name": "provider", "type": "STRING", "mode": "REQUIRED", "description": "nbk. Taken from the request: the response rows do not carry it."},
+    {"name": "base", "type": "STRING", "mode": "REQUIRED", "description": "USD. NBK publishes KZT per 1 USD."},
+    {"name": "quote", "type": "STRING", "mode": "REQUIRED", "description": "KZT."},
+    {"name": "rate_date", "type": "DATE", "mode": "REQUIRED", "description": "Date in the API row. Weekdays only for this provider, so earlier than requested_to on weekends."},
+    {"name": "rate_text", "type": "STRING", "mode": "REQUIRED", "description": "NBK rate, digits exactly as Frankfurter returned them, for example 453.71. Cast to NUMERIC only in dbt."},
+    {"name": "requested_from", "type": "DATE", "mode": "REQUIRED", "description": "First day of the request window: _arrival_date minus 6 days."},
+    {"name": "requested_to", "type": "DATE", "mode": "REQUIRED", "description": "Last day of the request window: _arrival_date."},
+    {"name": "fetched_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When the fetch ran, UTC. Frozen in the meta file, so reloads do not change it."},
+    {"name": "_arrival_date", "type": "DATE", "mode": "REQUIRED", "description": "Partition column: the run date R whose fetch returned this row."},
+    {"name": "_source_file", "type": "STRING", "mode": "REQUIRED", "description": "Landed body path, relative to the landing folder."}
+  ]
+}
