@@ -316,9 +316,9 @@ Index: [`docs/adr/README.md`](docs/adr/README.md).
 
 | ADR | Decision | Status |
 |---|---|---|
-| [0001 Warehouse](docs/adr/0001-warehouse-bigquery-sandbox.md) | BigQuery sandbox, no billing, a DML-free design; Plan B is the GCP Free Trial in a new project | Proposed |
-| [0002 Raw write path and time model](docs/adr/0002-raw-write-path-and-time-model.md) | one `WRITE_TRUNCATE` load job per table and arrival day into `table$YYYYMMDD`; three dates; marts as of the latest loaded arrival date | Proposed |
-| [0003 Reconciliation method](docs/adr/0003-reconciliation-method.md) | exact match on `payment_id` in INT64 minor units; one status per line; dated additive components; identity and preservation as error tests | Proposed |
+| [0001 Warehouse](docs/adr/0001-warehouse-bigquery-sandbox.md) | BigQuery sandbox, no billing, a DML-free design; Plan B is the GCP Free Trial in a new project | Accepted |
+| [0002 Raw write path and time model](docs/adr/0002-raw-write-path-and-time-model.md) | one `WRITE_TRUNCATE` load job per table and arrival day into `table$YYYYMMDD`; three dates; marts as of the latest loaded arrival date | Accepted |
+| [0003 Reconciliation method](docs/adr/0003-reconciliation-method.md) | exact match on `payment_id` in INT64 minor units; one status per line; dated additive components; identity and preservation as error tests | Accepted |
 | [0004 FX policy](docs/adr/0004-fx-policy.md) | NBK via Frankfurter, stored as published, landed once and committed; the weekend carry-forward is a labelled convention | Proposed |
 | [0005 Orchestration and run semantics](docs/adr/0005-orchestration-and-run-semantics.md) | `CronDataIntervalTimetable` at 00:00 UTC; exact days only through one-day backfills; history loaded newest first; a 1-slot dbt pool | Proposed |
 | [0006 dbt runtime in Airflow](docs/adr/0006-dbt-runtime-in-airflow.md) | a BashOperator calling dbt in its own venv, with per-run target and log paths; Cosmos later | Proposed |
@@ -438,7 +438,7 @@ Later: v1.x (a Postgres source extracted on a watermark, refunds and chargebacks
 ## How I used AI
 
 - An AI coding agent built this project. It wrote the code, core logic included, and drafted the docs, this README included, by following `docs/build_plan.md` step by step under the rules in [`AGENTS.md`](AGENTS.md) ("Build mode"). Every commit it made says "written with AI", so `git log --grep "written with AI"` lists them, and [`docs/build_journal.md`](docs/build_journal.md) records every step with its commands and their real output.
-- The planning documents (`docs/design.md`, `docs/build_plan.md`, `docs/specs/`, `docs/learning/concepts.md`, `docs/roadmap.md` and the ADR drafts) were drafted with an AI assistant before the build and reviewed by me. Each starts with a line saying so. All ten ADRs are still "Proposed": an ADR is marked Accepted only after I rewrite it in my own words.
+- The planning documents (`docs/design.md`, `docs/build_plan.md`, `docs/specs/`, `docs/learning/concepts.md`, `docs/roadmap.md` and the ADR drafts) were drafted with an AI assistant before the build and reviewed by me. Each starts with a line saying so. ADR-0001 to 0003 were rewritten in plain first-person words by the agent at step S10.2 ("Build mode") and marked Accepted on 2026-11-02; ADR-0004 to 0010 are still "Proposed".
 - This README started from a skeleton drafted with AI: the headings, tables, command lists and fact lists. The agent wrote its prose from the measured evidence and checked the rows against the code.
 - What I did: I chose the problem and the constraints ($0, the BigQuery sandbox, synthetic payments with real FX), reviewed the plan, did the Google Cloud setup (the sandbox project, the service account and its key), and I study the result file by file.
 - How the work was checked: pytest and dbt tests, the G0 probes, the mutation check ([`docs/testing.md`](docs/testing.md), 4 of 4 caught) and the rerun proof (N1).
