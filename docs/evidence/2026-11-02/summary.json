@@ -1,0 +1,56 @@
+{
+  "N1": {
+    "D_reprocessed_days": 7,
+    "P_identical": 146,
+    "P_total": 146,
+    "R_rows": 17595,
+    "as_of_after": "2026-11-01",
+    "as_of_before": "2026-11-01",
+    "cleared_day": "2026-10-14",
+    "identical": true,
+    "reprocess_days": 7,
+    "reprocess_from": "2026-10-26",
+    "reprocess_to": "2026-11-01",
+    "source": "docs/evidence/2026-11-02/compare.json",
+    "summary": "146 of 146 (table, partition) groups identical, 17595 rows, as_of 2026-11-01 in both"
+  },
+  "N2": {
+    "K_caught": 4,
+    "K_total": 4,
+    "M_mid_days": 60,
+    "U_abs_unexplained_minor": 0,
+    "as_of_date": "2026-11-01",
+    "assert_recon_decomposition_closes": "pass",
+    "claim_allowed": true,
+    "days_not_closing": 0,
+    "first_day": "2026-10-03",
+    "last_day": "2026-11-01",
+    "run_results": "runs/dbt/2026-10-14/target/run_results.json"
+  },
+  "N3": {
+    "C_carried_days": 9,
+    "E_agreeing": 20,
+    "E_own_rate_days": 20,
+    "W_carried_days_differing": 9,
+    "X_day": "2026-10-04",
+    "X_max_abs_diff_kzt": "5.82",
+    "Y_bps": "130.0",
+    "as_of_date": "2026-11-01",
+    "days_without_nbk_rate": [],
+    "scope_start": "2026-10-04",
+    "weekday_disagreements": []
+  },
+  "as_of_date": "2026-11-01",
+  "date": "2026-11-02",
+  "git_sha": "ae8e1a2eaaa09d5931794879cb225f3a7e9301fe",
+  "marts_dataset": "analytics",
+  "real": "N3 is measured on real NBK rates",
+  "seed": 20261101,
+  "synthetic": "N1 and N2 are measured on synthetic payments",
+  "window": {
+    "first_day": "2026-10-03",
+    "last_day": "2026-11-01"
+  },
+  "world_start": "2026-10-04",
+  "written_at_utc": "2026-11-02 20:04:24+00:00"
+}

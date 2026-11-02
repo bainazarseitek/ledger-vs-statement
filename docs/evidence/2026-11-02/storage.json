@@ -1,0 +1,44 @@
+{
+  "datasets": {
+    "analytics": {
+      "logical_bytes": 1784864,
+      "rows": 5848,
+      "tables": 5,
+      "views": 7
+    },
+    "analytics_dev": {
+      "logical_bytes": 457106,
+      "rows": 1609,
+      "tables": 5,
+      "views": 7
+    },
+    "probe": {
+      "logical_bytes": 48,
+      "rows": 3,
+      "tables": 3,
+      "views": 1
+    },
+    "raw": {
+      "logical_bytes": 2695225,
+      "rows": 11760,
+      "tables": 3,
+      "views": 0
+    },
+    "raw_dev": {
+      "logical_bytes": 663627,
+      "rows": 2899,
+      "tables": 3,
+      "views": 0
+    }
+  },
+  "git_sha": "ae8e1a2eaaa09d5931794879cb225f3a7e9301fe",
+  "ledger_total_bytes": null,
+  "measured_at_utc": "2026-11-02 20:03:42+00:00",
+  "method": "__TABLES__",
+  "note": "Bytes stored now. The lifetime quota may count every byte ever written, so this is a lower bound.",
+  "table_storage": {
+    "error": "400 INFORMATION_SCHEMA.TABLE_STORAGE hasn't been enabled for project <project>.\nConsider using one of the following SQL statements to enable data collection:\n  ALTER PROJECT `<project>`\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nOr to enable for the entire organization:\n  ALTER ORGANIZATION\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nNote that if you need to query the _BY_ORGANIZATION tables,\nuse the ALTER ORGANIZATION statement in order to see all tables in the organization.\nYou will need the bigquery.config.update permission on the organization or project\nin order to run the above SQL statements.\nThe bigquery.admin role includes this permission.\n\nAfter enabling, please allow around 1 day for the complete historical data to become available.\n; reason: invalid, message: INFORMATION_SCHEMA.TABLE_STORAGE hasn't been enabled for project <project>.\nConsider using one of the following SQL statements to enable data collection:\n  ALTER PROJECT `<project>`\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nOr to enable for the entire organization:\n  ALTER ORGANIZATION\n  SET OPTIONS (`region-us.enable_info_schema_storage` = TRUE)\n\nNote that if you need to query the _BY_ORGANIZATION tables,\nuse the ALTER ORGANIZATION statement in order to see all tables in the organization.\nYou will need the bigquery.config.update permission on the organization or project\nin order to run the above SQL statements.\nThe bigquery.admin role includes this permission.\n\nAfter enabling, please allow around 1 day for the complete historical data to become available.\n\n\nLocation: US\nJob ID: cab3a66f-8bf3-4d7f-82ff-31b0cc19110c\n",
+    "readable": false
+  },
+  "total_logical_bytes": 5600870
+}
