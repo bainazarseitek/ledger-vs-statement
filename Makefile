@@ -11,7 +11,7 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint test check probe bq-setup day days up down smoke dbt-build dbt-unit
+.PHONY: doctor setup lint test check probe bq-setup day days up down smoke unpause pause dbt-build dbt-unit
 
 doctor:
 	which -a dbt
@@ -64,3 +64,9 @@ dbt-build:
 
 dbt-unit:
 	cd dbt && uv run dbt test --select "test_type:unit" --target dev
+
+unpause:
+	$(AIRFLOW) dags unpause recon_daily
+
+pause:
+	$(AIRFLOW) dags pause recon_daily
