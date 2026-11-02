@@ -2703,3 +2703,20 @@ The identity and the preservation test show that no minor unit is lost, duplicat
 **Gate G2:** everything measured is true and published in the README, and nothing is listed as "in progress". The floor was not cut, so the tag is `v1.0`.
 
 **Next step:** tag `v1.0` (S10.4 sub-step 3). Then the owner-only steps: S10.4 sub-steps 4 to 7, and the two screenshots from S10.1.
+
+## S10.4: the tag `v1.0` (sub-step 3)
+
+**Date and commit:** 2026-11-03 (UTC). The annotated tag `v1.0` points at `9e246e7`.
+
+**What was done:**
+- The four scans from S10.4 in `docs/build_plan.md` were run again after the journal commit. Each printed `exit=1`, the `keys .env` log printed nothing, and the README placeholder grep printed nothing.
+- `git tag -a v1.0 -m "v1.0: call-ready floor"`, then `git push origin main v1.0`. The pre-push hook ran and passed:
+  ```text
+  fb5f68c..9e246e7  main -> main
+  * [new tag]         v1.0 -> v1.0
+  ```
+- `git ls-remote --tags origin` lists `refs/tags/g1-freeze` and `refs/tags/v1.0`.
+
+**What went wrong:** nothing.
+
+**Next step:** owner-only. S10.4 sub-steps 4 to 7 (visibility, description, topics, the private-window check), then the two S10.1 screenshots. After that, the owner studies `docs/walkthrough.md` and does its drill.
