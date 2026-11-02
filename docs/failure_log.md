@@ -92,6 +92,8 @@ Some steps ask you to watch a test fail on purpose before the logic exists. Reco
 | UT3 `ut_events_dedup_first_delivery` | S11.1 | | | |
 | UT4 `ut_lines_fee_boundary_and_two_causes` | S11.2 | | | |
 
+Correction (2026-11-02) to the UT2 row: the `8ed9fe6` stub labels every line `matched`, and UT2 expects `matched` for both `pay_c` and `pay_d`. So the rows that differed in `match_status` were `pay_a`, `pay_b`, `pay_e` and `pay_f`, not "every row but `pay_c`". The rest of the row is correct.
+
 Add a row for any other planned failure that a step asks for, for example the U3 negative control (S13.2) or the U6 late batch (S16.3). If a planned red run fails for a different reason than the one you expected, for example a broken fixture, that is a bug: write an entry for it.
 
 ## Entries
