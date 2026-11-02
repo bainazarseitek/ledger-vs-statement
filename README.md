@@ -157,6 +157,10 @@ From `dbt/seeds/reason_codes.csv`. Each line in `fct_recon_lines` gets exactly o
 | `before_scope` | explained | one-sided line dated before the oldest loaded day | none |
 | `matched` | matched | both sides present, amounts equal, fee within tolerance, date explained | none |
 
+The open work queue, from the saved query [`dbt/analyses/exceptions_queue.sql`](dbt/analyses/exceptions_queue.sql), oldest and largest first (synthetic data):
+
+![The exceptions queue in the BigQuery console](docs/img/exceptions_queue.png)
+
 ### How a run works
 
 One run owns one UTC arrival day, and it learns which day from its data interval, never from the clock. It replaces exactly one partition in each raw table, for that day only. Then dbt rebuilds the marts from all loaded days and stamps every row with `as_of_date`, the latest loaded arrival date.
@@ -179,6 +183,10 @@ Rules the DAG follows:
 - Late data: the generator recomputes the last 5 booking days, so late deliveries land in the right arrival file. A ledger line without a statement line stays `in_transit` until its due date.
 - An empty day deletes its partition. That is a table operation, not DML.
 - The 1-slot pool `dbt_serial` keeps a scheduled run and a backfill run from building dbt at the same time.
+
+The Airflow Grid view of `recon_daily`, showing the 10 latest runs with every task green:
+
+![The recon_daily Grid view in Airflow](docs/img/airflow_grid.png)
 
 Three dates:
 
