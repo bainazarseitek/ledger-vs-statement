@@ -538,7 +538,7 @@ Card: "Data tests: generic, singular and severity", "Data quality checks: integr
 
 ### Unit tests
 
-A dbt unit test runs one model's SQL on fixed input rows and compares exact output rows (`dbt/models/_unit_tests.yml`). UT1 and UT2 were written first and seen red on a naive model (`72d7ad3`, `8ed9fe6`), then green (`4c131b9`, `74fb5d8`), as recorded in "Planned red runs (not bugs)" in `docs/failure_log.md`. Unit tests run only on the host: the DAG passes `--exclude-resource-type unit_test` (`recon_daily.py:31`). Mutation 2 (`<` to `<=` in the in-transit rule) was caught only by UT2, because the dev data had no line exactly on its due date. Cards: "Unit tests", "Unit tests versus data tests".
+A dbt unit test runs one model's SQL on fixed input rows and compares exact output rows (`dbt/models/_unit_tests.yml`). UT1 and UT2 were written first and seen red on a naive model (`72d7ad3`, `8ed9fe6`), then green (`4c131b9`, `74fb5d8`), as recorded in "Planned red runs (not bugs)" in `docs/failure_log.md`. Unit tests run only on the host: the DAG passes `--exclude-resource-type unit_test` (`recon_daily.py:31`). In the mutation check, mutation 2 (`<` to `<=` in the in-transit rule) turned only UT2 red (`docs/testing.md`, "Mutation check", row 2). Cards: "Unit tests", "Unit tests versus data tests".
 
 ### Contracts
 
@@ -681,7 +681,7 @@ Rules while it runs:
     `missing_in_statement`. The due date is inclusive: `in_transit` only while `as_of_date < due_date` (`fct_recon_lines.sql:112`). This is `pay_b` in UT2. Mutation 2 changed `<` to `<=`, and only UT2 caught it.
 
 15. **A KZT payment is captured at 19:00:00 UTC on 2026-10-20. Which accounting date does the PSP give it, and what is `date_shift` when it matches?**
-    2026-10-21. 19:00 UTC plus 5 hours is midnight on the MID's clock. Its `date_shift` is `timing_cutoff`, because the PSP's date equals `expected_accounting_date` (`int_ledger__captures.sql:18`, `fct_recon_lines.sql:120`). 18:59:59 stays on the 20th (UT1, `pay_k1` and `pay_k2`).
+    2026-10-21. 19:00 UTC plus 5 hours is midnight on the MID's clock. Its `date_shift` is `timing_cutoff`, because the PSP's date equals `expected_accounting_date` (`int_ledger__captures.sql:18`, `fct_recon_lines.sql:120`). This is `pay_k2` in UT1. 18:59:59 stays on the 20th (UT1, `pay_k1`).
 
 16. **Why is `unexplained_minor` not a tautology?**
     The gap is top-down from `int_ledger__captures` and `stg_psp__settlement_lines` (`fct_recon_daily.sql:20-47`). The components are bottom-up from `fct_recon_lines` only (`:80-142`). A matcher that loses, duplicates or misdates a line, or uses a wrong sign, makes the two disagree. Mutations 1, 3 and 4 turned `assert_recon_decomposition_closes` red.
