@@ -2720,3 +2720,22 @@ The identity and the preservation test show that no minor unit is lost, duplicat
 **What went wrong:** nothing.
 
 **Next step:** owner-only. S10.4 sub-steps 4 to 7 (visibility, description, topics, the private-window check), then the two S10.1 screenshots. After that, the owner studies `docs/walkthrough.md` and does its drill.
+
+## S10.1 (finished): the two screenshots
+
+**Date and commits:** 2026-11-02 (UTC). The images are in one commit and the README links in the next, both pushed with this entry.
+
+**What was built:**
+- `docs/img/exceptions_queue.png`: the owner ran the compiled `exceptions_queue` query in the BigQuery console.
+- `docs/img/airflow_grid.png`: the owner took the `recon_daily` Grid view.
+- `README.md`: the queue image under "Reason codes", and the grid image under "How a run works".
+
+**How it works:**
+- Both full screenshots showed things that must not be published. The BigQuery header and the Explorer panel showed the project id, and both showed a desktop overlay. The Airflow UI was also in Russian. They were cropped with macOS `sips` to the results table (`-c 1168 2506 --cropOffset 384 358`) and to the task grid (`-c 476 922 --cropOffset 279 143`). The full originals were kept outside the repo.
+- The grid shows the 10 latest runs, the number the Grid view displays by default, so the caption says so.
+
+**Commands and output:** `sips -g pixelWidth -g pixelHeight`: 2506 x 1168 and 922 x 476. Both crops were checked by eye: no project id and no overlay. `make check` passed, and the em dash, banned-word and README placeholder checks were clean.
+
+**What went wrong:** nothing.
+
+**Next step:** owner-only. S10.4 sub-steps 4 to 7: visibility, description, topics and the private-window check.
