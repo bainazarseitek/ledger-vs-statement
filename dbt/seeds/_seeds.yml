@@ -1,0 +1,29 @@
+seeds:
+  - name: mids
+    description: "One row per merchant account (MID): currency, cut-off offset, settlement lag and fee terms. SYNTHETIC contract terms shared by the generator and dbt."
+    config:
+      column_types:
+        mid: STRING
+        psp: STRING
+        currency: STRING
+        statement_utc_offset_hours: INT64
+        max_settlement_lag_days: INT64
+        fee_bps: INT64
+        fee_fixed_minor: INT64
+        fee_tol_bps: INT64
+        fee_tol_min_minor: INT64
+  - name: currencies
+    description: "One row per currency: minor units per major unit (ISO 4217)."
+    config:
+      column_types:
+        currency: STRING
+        minor_per_major: INT64
+  - name: reason_codes
+    description: "One row per reason code: category, precedence (lower wins) and the analyst's next action."
+    config:
+      column_types:
+        code: STRING
+        category: STRING
+        precedence: INT64
+        description: STRING
+        analyst_action: STRING

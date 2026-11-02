@@ -11,7 +11,7 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint test check probe bq-setup day days up down smoke
+.PHONY: doctor setup lint test check probe bq-setup day days up down smoke dbt-build
 
 doctor:
 	which -a dbt
@@ -24,6 +24,7 @@ setup:
 	uv sync
 	mkdir -p keys landing runs logs config plugins
 	test -f .env || cp .env.example .env
+	cd dbt && uv run dbt deps
 
 lint:
 	uv run ruff check .
@@ -57,3 +58,6 @@ down:
 smoke:
 	$(AIRFLOW) dags unpause smoke_bigquery
 	$(AIRFLOW) dags trigger smoke_bigquery
+
+dbt-build:
+	cd dbt && uv run dbt build --target dev

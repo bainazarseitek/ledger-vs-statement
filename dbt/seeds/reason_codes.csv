@@ -1,0 +1,10 @@
+code,category,precedence,description,analyst_action
+missing_in_statement,exception,10,ledger line with no statement line by its due date,ask the PSP or check for a void
+missing_in_ledger,exception,20,"settled by the PSP, never booked (lost webhook)",replay the webhook or book the revenue
+amount_mismatch,exception,30,settled gross differs from the booked amount,check the ledger price and PSP adjustments
+fee_mismatch,exception,40,fee outside the contracted tolerance,raise with the PSP
+date_mismatch,exception,45,accounting date not explained by the MID's cut-off,check the PSP's cut-off
+in_transit,explained,50,"ledger line waiting for its statement, before the due date",wait
+timing_cutoff,explained,60,booked on another accounting day because of the MID's cut-off,none
+before_scope,explained,80,one-sided line dated before the oldest loaded day,none
+matched,matched,90,"both sides present, amounts equal, fee within tolerance, date explained",none

@@ -3,8 +3,35 @@ version: "1.0.0"
 profile: ledger_vs_statement
 require-dbt-version: [">=1.12.6", "<1.13.0"]
 
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+clean-targets: ["target", "dbt_packages"]
+
+query-comment:
+  job-label: true
+
 flags:
   send_anonymous_usage_stats: false
 
 vars:
   statement_grace_days: 1
+  fx_max_carry_days: 5
+  exception_share_warn: 0.02
+  exception_min_count: 5
+  gate_window_days: 7
+  # as_of_date is never set here. Host dev builds may pass it with --vars.
+
+models:
+  ledger_vs_statement:
+    +labels:
+      data_origin: synthetic
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+      +on_schema_change: fail

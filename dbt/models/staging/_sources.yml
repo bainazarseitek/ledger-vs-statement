@@ -1,0 +1,17 @@
+sources:
+  - name: psp
+    description: "SYNTHETIC webhook deliveries and PSP statement lines, loaded by Airflow into raw or by the host CLI into raw_dev."
+    database: "{{ env_var('GCP_PROJECT') }}"
+    schema: "{{ env_var('RAW_DATASET', 'raw') }}"
+    tables:
+      - name: payment_events
+        description: "One row per webhook delivery that arrived on _arrival_date. SYNTHETIC."
+      - name: settlement_lines
+        description: "One row per line of a per-MID statement file that arrived on _arrival_date. SYNTHETIC."
+  - name: fx
+    description: "REAL USD/KZT rates published by the National Bank of Kazakhstan, fetched through Frankfurter v2 and stored as published."
+    database: "{{ env_var('GCP_PROJECT') }}"
+    schema: "{{ env_var('RAW_DATASET', 'raw') }}"
+    tables:
+      - name: fx_rates
+        description: "One row per rate observation returned by the fetch made for _arrival_date. REAL."
