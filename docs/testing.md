@@ -25,3 +25,5 @@ How each mutation was run:
 3. Mutation 3 removed the whole four-line `QUALIFY row_number() over (...) = 1` clause.
 4. Mutation 4 deleted `where s.record_type = 'SALE'` from the `statement` CTE, added `s.record_type` to that CTE's columns so the moved filter compiles, and added `where s.record_type = 'SALE'` after the `on` clause of the `joined` CTE.
 5. Afterwards, `make dbt-build` on `main` rebuilt `analytics_dev` from the correct code: `PASS=56 WARN=0 ERROR=0 SKIP=0`.
+
+Correction (2026-11-02, UTC): "Run on 2026-11-03" above is the Astana (UTC+5) date. In UTC, the date every evidence file in this repo uses, the run was on 2026-11-02.
