@@ -1710,4 +1710,105 @@ Each M5 step was checked by two reviewers (one against the spec, one against the
 
 One deliberate deviation is open for the owner. `docs/specs/dbt_project.md`, heading "fct_recon_daily", says every INT64 column of `fct_recon_daily` is wrapped in `COALESCE(..., 0)` so that a day without activity shows zeros. `fx_carry_days` is INT64 but is left unwrapped: it is not an activity count, and the same section says the FX columns may be NULL on a day before the first rate, so a 0 next to a NULL `units_per_usd` would claim a fresh rate that does not exist. Over the full window every day has a rate, so the output is the same either way.
 
-**Next step:** S6.1, `dags/recon_daily.py`.
+
+## S6.1: `dags/recon_daily.py`
+
+**Date and commit:** 2026-11-02, `ebdff8e`.
+
+**What was built:**
+- `dags/recon_daily.py`: the daily pipeline. A module docstring with the interval rules, `log_failure`, `_bq_client`, `_landing_dir`, and the `recon_daily` DAG with six tasks: `check_window`, `ensure_tables`, `generate_day`, `fetch_fx`, the mapped `load_raw`, and `dbt_build`.
+
+**How it works:**
+One run owns one UTC arrival day R. The schedule is an explicit `CronDataIntervalTimetable`, because in Airflow 3 a cron string or `"@daily"` becomes a `CronTriggerTimetable`, whose data interval has zero length:
+
+`dags/recon_daily.py:62`
+```python
+    schedule=CronDataIntervalTimetable("0 0 * * *", timezone="UTC"),
+```
+
+`check_window` turns the data interval into R. It refuses a missing interval, and an interval that is not exactly one UTC day starting at 00:00 (line 82). It then reads the wall clock once, only to check the window, and calls the same `check_run_date` the host CLI uses, so the DAG and `make day` can never disagree about the 45-day guard:
+
+`dags/recon_daily.py:85`
+```python
+        today = datetime.now(UTC).date()          # the only wall-clock read in the DAG, and only to check
+```
+
+`dags/recon_daily.py:93`
+```python
+            raise AirflowFailException(str(err)) from err
+```
+
+`AirflowFailException` fails the task at once with no retry. Every later Python task receives R from `check_window` through XCom as a `YYYY-MM-DD` string. `ensure_tables` first refuses any `RAW_DATASET` other than `raw` (line 99), so the loader and the dbt sources always point at the same dataset. `fetch_fx` retries 3 times with `retry_exponential_backoff=2.0`, a float multiplier, never `True` (line 117). The three loads are one task mapped over the tables:
+
+`dags/recon_daily.py:144`
+```python
+        load_raw.partial(run_date=rd).expand(table=TABLES),
+```
+
+`dbt_build` is a `BashOperator` with the exact inline command from the spec, `pool="dbt_serial"` (one slot, so a backfill run and a scheduled run never build dbt at the same time) and `append_env=True`, so it keeps `PATH`, `HOME` and the key path (lines 134 and 135). Its only template is `{{ data_interval_start | ds }}`, used for the per-day `runs/dbt/<R>/` folders. Heavy imports (the BigQuery hook, the `recon` package) sit inside the task functions, because the dag-processor parses the file about every 30 seconds.
+
+This follows "recon_daily settings", "recon_daily tasks", "The dbt_build command, piece by piece" and "recon_daily code shape" in `docs/specs/airflow_and_docker.md`, and ADR-0005. It rejects `schedule="@daily"` (empty interval), `{{ ds }}` for business dates, and a second copy of the date rules inside the DAG.
+
+**Commands and output:**
+- `uv run ruff check dags/` first reported 4 errors (UP017, use `datetime.UTC` instead of `timezone.utc`). Fixed with `ruff --fix`; then `All checks passed!`. `uv run ruff check dags/ --select AIR301,AIR302`: `All checks passed!`.
+- `docker compose exec airflow-scheduler airflow dags list-import-errors`: `No data found`.
+- `airflow tasks list recon_daily`: `check_window`, `dbt_build`, `ensure_tables`, `fetch_fx`, `generate_day`, `load_raw`.
+- `airflow dags list`: `recon_daily` with `is_paused` True (new DAGs start paused).
+
+**What went wrong:** Nothing in the repo. The file was written while the M5 workflow was running and committed only after M5 finished, so the two never staged files at the same time.
+
+**Interview questions:**
+1. *Why does a run for 2026-10-25 start on 2026-10-26?* Its data interval is [2026-10-25 00:00, 2026-10-26 00:00) UTC, and a run starts only after its interval has ended. The logical date is 2026-10-25, but the run id carries `run_after`, 2026-10-26, so runs are always named by logical date.
+2. *Why is the dbt command not in a `.sh` file?* Airflow treats a `bash_command` string ending in `.sh` as the name of a template file to load, not as a command. Keeping it inline also keeps the one template, `{{ data_interval_start | ds }}`, visible in the DAG.
+
+## S6.2: the first real run
+
+**Date and commit:** 2026-11-02, `050b7d2` (the `unpause` and `pause` targets) and `a59c0b7` (the FX file the run landed).
+
+**What was built:** `make unpause` and `make pause` in the `Makefile`.
+
+**How it works:** with `catchup=False`, unpausing creates exactly one run: the latest complete interval. The plan was written for Sunday 2026-11-01, when that interval would have been 2026-10-31. The build ran on Monday 2026-11-02 at 18:29 UTC, so unpausing created the run for **2026-11-01** instead. This is a date shift, not a deviation: the plan's history (2026-10-04 to 2026-11-01, 29 runs) stays the same, because the backfill in S6.3 then covers 2026-10-04 to 2026-10-31.
+
+**Commands and output:**
+- `make unpause`, then `airflow dags list-runs recon_daily`:
+  ```text
+  recon_daily  scheduled__2026-11-02T00:00:00+00:00  success  run_after 2026-11-02T00:00:00+00:00  logical_date 2026-11-01T00:00:00+00:00  start 18:29:01  end 18:30:21
+  ```
+- `airflow tasks states-for-dag-run recon_daily 2026-11-01`: all 8 task instances `success` (`check_window`, `ensure_tables`, `generate_day`, `fetch_fx`, `load_raw` map indexes 0, 1 and 2, `dbt_build`). `dbt_build` took 62 seconds of the run.
+- The `check_window` log contains `run_date=2026-11-01`.
+- **[T] = 80 seconds** (18:29:01 to 18:30:21 UTC).
+- `fetch_fx` landed `landing/fx/provider=nbk/arrival_date=2026-11-01.json` and its meta file, committed in `a59c0b7`.
+
+**What went wrong:** Nothing. Gate G1's first half (one run green end to end) passed.
+
+**Interview questions:**
+1. *The run id says 2026-11-02 but the run processed 2026-11-01. Why?* In Airflow 3.3.2 a run id is the run type plus `run_after`, the end of the interval. The processed day is the logical date, the start of the interval. `check_window` logs it as `run_date=`, which is the line to read.
+2. *Why not `airflow dags trigger -l 2026-10-31` to run an exact day?* A CLI trigger infers its interval from the trigger time, not from `-l`, so it processes yesterday relative to now while recording the logical date you typed. Exact days run only through a one-day backfill after a dry run.
+
+## S6.3: freeze, then the history backfill (G1)
+
+**Date and commit:** 2026-11-02, `9fe1bdd` (the `backfill-dry` and `backfill` targets), tag `g1-freeze` on `9fe1bdd`.
+
+**What was built:** `make backfill-dry FROM= TO=` and `make backfill FROM= TO=`. Both run `airflow backfill create --dag-id recon_daily --from-date $(FROM) --to-date $(TO) --run-backwards --max-active-runs 1`, the dry run with `--dry-run`, and both refuse empty dates.
+
+**How it works:** the tag `g1-freeze` marks the code that produced the history. From now until the rerun proof is committed, nothing changes under `src/recon/` or `dags/`, or in `dbt/seeds/mids.csv`. `--run-backwards` loads newest first, so every run sees a contiguous history from its own date up to the latest loaded day; oldest first, after the 2026-11-01 run exists, would leave a gap that `assert_arrival_days_complete` correctly fails. `--max-active-runs 1` keeps backfill runs one at a time. With [T] = 80 seconds, 28 runs take about 40 minutes, far inside the plan's 4-hour rule, so the full history was kept (no cut-order item 4).
+
+**Commands and output:**
+- `git status --short` showed only `.vscode/` (the owner's editor settings, never part of the build). `git tag -a g1-freeze -m "G1: generator and loader frozen"`, then `git push origin main g1-freeze`: `* [new tag] g1-freeze -> g1-freeze` (the pre-push hook ran).
+- `make backfill-dry FROM=2026-10-04 TO=2026-10-31`: 28 logical dates, newest first (2026-10-31 down to 2026-10-04); `list-runs` still showed one run, so the dry run created nothing.
+- `make backfill FROM=2026-10-04 TO=2026-10-31` at 18:31 UTC: `Created backfill Dag run. backfill_id=1` for each of the 28 dates.
+
+**What went wrong:** Nothing so far. The backfill's result is checked in S7.1.
+
+**Interview questions:**
+1. *Why newest first?* `assert_arrival_days_complete` requires a row on every day from `scope_start` to `as_of_date`. Newest first, each finished run extends the loaded history downwards without a hole; oldest first would build marts with a gap between the oldest loaded days and 2026-11-01.
+2. *What does the pool `dbt_serial` stop, and what does it not stop?* It stops two `dbt_build` tasks (for example a backfill run and the 00:00 UTC scheduled run) from rebuilding the same marts at once. It does not stop another run's `load_raw` from landing a new day during a build, which is why the backfill must finish before 00:00 UTC.
+
+## Explain check M6
+
+1. *Which interval does the run for 2026-10-25 process?* [2026-10-25 00:00, 2026-10-26 00:00) UTC: everything that arrived during UTC day 2026-10-25. It starts after 2026-10-26 00:00 UTC, and `check_window` returns `2026-10-25`.
+2. *Why CronDataIntervalTimetable?* In Airflow 3 a cron string or `"@daily"` becomes a `CronTriggerTimetable`, whose data interval starts and ends at the trigger time. `check_window` would then see a zero-length interval and fail. `CronDataIntervalTimetable("0 0 * * *", timezone="UTC")` gives a one-day interval ending at UTC midnight.
+3. *What does a CLI trigger process?* `airflow dags trigger recon_daily -l L` takes its interval from the trigger time, so it processes yesterday relative to now while recording logical date L. Without `-l` there is no interval at all, and `check_window` fails with "No data interval".
+4. *Why newest first?* So the loaded history is always contiguous up to the latest day, and the completeness test and the marts never see a hole.
+
+**Next step:** S7.1, check the backfill.
