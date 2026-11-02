@@ -1,0 +1,33 @@
+version: 2
+
+unit_tests:
+  - name: ut_captures_cutoff_both_directions
+    description: "Cut-off shifts in both directions and the inclusive due date (KZT UTC+5, USD UTC-5, lag 2, grace 1)."
+    model: int_ledger__captures
+    overrides:
+      vars:
+        statement_grace_days: 1
+    given:
+      - input: ref('stg_psp__payment_events')
+        format: dict
+        rows:
+          - {event_id: evt_k1, event_type: payment.captured, payment_id: pay_k1, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-20 18:59:59"}
+          - {event_id: evt_k2, event_type: payment.captured, payment_id: pay_k2, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-20 19:00:00"}
+          - {event_id: evt_k3, event_type: payment.captured, payment_id: pay_k3, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-20 19:30:00"}
+          - {event_id: evt_u1, event_type: payment.captured, payment_id: pay_u1, mid: mid_usd_01, currency: USD, amount_minor: 1999, event_ts: "2026-10-21 04:59:59"}
+          - {event_id: evt_u2, event_type: payment.captured, payment_id: pay_u2, mid: mid_usd_01, currency: USD, amount_minor: 1999, event_ts: "2026-10-21 05:00:00"}
+          - {event_id: evt_u3, event_type: payment.captured, payment_id: pay_u3, mid: mid_usd_01, currency: USD, amount_minor: 1999, event_ts: "2026-10-21 03:00:00"}
+      - input: ref('mids')
+        format: dict
+        rows:
+          - {mid: mid_usd_01, psp: psp_alpha, currency: USD, statement_utc_offset_hours: -5, max_settlement_lag_days: 2, fee_bps: 290, fee_fixed_minor: 30, fee_tol_bps: 10, fee_tol_min_minor: 5}
+          - {mid: mid_kzt_01, psp: psp_alpha, currency: KZT, statement_utc_offset_hours: 5, max_settlement_lag_days: 2, fee_bps: 250, fee_fixed_minor: 0, fee_tol_bps: 10, fee_tol_min_minor: 500}
+    expect:
+      format: dict
+      rows:
+        - {payment_id: pay_k1, booking_date: "2026-10-20", expected_accounting_date: "2026-10-20", due_date: "2026-10-23"}
+        - {payment_id: pay_k2, booking_date: "2026-10-20", expected_accounting_date: "2026-10-21", due_date: "2026-10-24"}
+        - {payment_id: pay_k3, booking_date: "2026-10-20", expected_accounting_date: "2026-10-21", due_date: "2026-10-24"}
+        - {payment_id: pay_u1, booking_date: "2026-10-21", expected_accounting_date: "2026-10-20", due_date: "2026-10-23"}
+        - {payment_id: pay_u2, booking_date: "2026-10-21", expected_accounting_date: "2026-10-21", due_date: "2026-10-24"}
+        - {payment_id: pay_u3, booking_date: "2026-10-21", expected_accounting_date: "2026-10-20", due_date: "2026-10-23"}

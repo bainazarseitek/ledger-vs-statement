@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: int_ledger__captures
+    description: "One row per payment_id: our revenue ledger, one deduplicated capture per payment with its booking, expected accounting and due dates. SYNTHETIC."
+    columns:
+      - name: payment_id
+        description: "Primary key. A second capture event for one payment fails the unique test."
+        data_tests:
+          - unique
+          - not_null
+      - name: event_id
+        description: "The capture event."
+      - name: order_id
+        description: "Order id."
+      - name: mid
+        description: "Merchant account."
+      - name: currency
+        description: "Settlement currency of the MID."
+      - name: plan_id
+        description: "Plan."
+      - name: amount_minor
+        description: "Booked amount in minor units (INT64)."
+      - name: event_ts
+        description: "Capture time, UTC."
+      - name: first_arrival_date
+        description: "Arrival day of the first loaded delivery."
+      - name: copies_received
+        description: "Deliveries received for the event."
+      - name: booking_date
+        description: "Our revenue day: DATE(event_ts) in UTC."
+        data_tests:
+          - not_null
+      - name: expected_accounting_date
+        description: "The day the MID's fixed cut-off predicts the PSP will book the sale."
+        data_tests:
+          - not_null
+      - name: due_date
+        description: "From this day on (inclusive) a missing statement line is an exception."
+        data_tests:
+          - not_null
