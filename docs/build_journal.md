@@ -1111,4 +1111,229 @@ The bug from S0.2 is logged as F-001 in `docs/failure_log.md` (commit `780bf5d`)
 
 **Commands and output:** `make check` after the fixes: `9 passed`, exit 0.
 
-**Next step:** S4.1, `load_partition` and `load_day`.
+
+## S4.1: one WRITE_TRUNCATE load job per table and day
+
+**Date and commit:** 2026-11-02, `3ce0221`
+
+**What was built:**
+- `src/recon/load.py` has these new pieces:
+  - `schema_doc` and `schema_fields`: read a table's schema JSON and turn it into BigQuery `SchemaField` objects.
+  - `MAX_RUN_AGE_DAYS = 45` and `check_run_date`: the one guard on run dates.
+  - `read_ndjson`: reads one landing file, and fails if the file is missing.
+  - `fx_rows`: builds `fx_rates` rows from the landed Frankfurter body.
+  - `landed_rows`: picks the exact landing files of one table for one day.
+  - `load_day` and `load_partition`: check the rows, then do the one write.
+
+**How it works:**
+`load_day` reads every landing file of one table for run date R. For statements that means one file per MID, named from `mids.csv`, never found with a glob. It joins the rows in memory. Then it checks every row before any job runs. Every row must have `_arrival_date` equal to R. Payment events must also have `DATE(delivered_ts)` equal to R.
+
+`src/recon/load.py:114`
+```python
+    for row in rows:                                      # every check runs before any job
+        if row["_arrival_date"] != r:
+            raise ValueError(f"{table}: row with _arrival_date {row['_arrival_date']} in the files of run date {r}")
+```
+
+`load_partition` makes exactly one write for the table and day. The target is the partition decorator `<table>$YYYYMMDD`. If there are no rows, it deletes that partition. That is a table operation, not DML.
+
+`src/recon/load.py:125`
+```python
+    dest = f"{client.project}.{dataset}.{table}${run_date:%Y%m%d}"     # one partition, no dashes
+    if not rows:
+        client.delete_table(dest, not_found_ok=True)      # a table operation, not DML
+```
+
+If there are rows, it runs one NDJSON load job with `location="US"`. The job uses WRITE_TRUNCATE, CREATE_NEVER and `max_bad_records=0`. CREATE_NEVER means a missing table fails loudly. Without it, the load could create the table with no partitioning.
+
+`src/recon/load.py:133`
+```python
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        create_disposition=bigquery.CreateDisposition.CREATE_NEVER,   # a missing table fails loudly
+```
+
+After the job finishes, the loader compares BigQuery's row count with the number of landed rows. A mismatch raises `RuntimeError`.
+
+`src/recon/load.py:139`
+```python
+    if job.output_rows != len(rows):
+        raise RuntimeError(f"{dest}: load wrote {job.output_rows} rows, {len(rows)} were landed")
+```
+
+For FX, `fx_rows` first checks the sha256 of the body against the meta file, so a changed landed file fails loudly. It parses rates with `parse_float=str`, so no rate ever becomes a Python float (`src/recon/load.py:90`). It takes `provider` (`nbk`) from the folder name, sets `requested_from` to R-6 and `requested_to` to R, and copies `fetched_at` from the frozen meta file.
+
+`check_run_date` refuses three kinds of date: a date before the world start, a date that has not ended in UTC, and a date more than 45 days old (`src/recon/load.py:60` to `:70`).
+
+This follows "Load protocol" and "How the pipeline refuses old dates" in `docs/specs/bigquery_sandbox_and_costs.md`, and ADR-0002. It rejects three alternatives:
+- WRITE_APPEND plus dedup views, because each rerun would add another copy of the day.
+- One WRITE_TRUNCATE job per file, because two jobs into the same partition would overwrite each other.
+- MERGE, streaming inserts and Cloud Storage, because the sandbox refuses them or they need billing.
+
+ADR-0009 also rejects running with no write guard.
+
+**Commands and output:**
+- Tamper test:
+  - The landing files of 2026-10-28 were copied to a scratch folder, and one statement row's `_arrival_date` was changed to 2026-10-27.
+  - `load_day` was then called with a client stub that raises on any call. Output: `settlement_lines refused before any job: settlement_lines: row with _arrival_date 2026-10-27 in the files of run date 2026-10-28`.
+  - The untampered `payment_events` file passed every check and reached the stub at `load_table_from_file`, as expected.
+- Missing file: with the events file renamed away, the output was `missing file refused: expected landing file is missing`.
+
+**What went wrong:** Nothing.
+
+**Interview questions:**
+1. *Why join all MID files before loading instead of loading each file?*
+   WRITE_TRUNCATE replaces the whole partition with what one job loads. Two jobs into `settlement_lines$20261028`, one per MID, would leave only the last MID's rows. Joining the rows first means one job writes the full day.
+2. *Why check `_arrival_date` in Python when BigQuery also refuses a row for another partition?*
+   The Python check runs before any job, so nothing is written at all and the error names the bad row. With several tables per day, a failure in BigQuery could come after another table was already loaded. Checking first also gives one clear error message instead of a job error.
+
+## S4.2: fetch NBK rates once into immutable landing
+
+**Date and commit:** 2026-11-02, `57822b1`
+
+**What was built:**
+- `src/recon/fx.py` has four functions:
+  - `fx_url`: builds the request URL for R-6 to R.
+  - `check_rates`: checks the answer before anything is landed.
+  - `write_atomic`: writes a temp file.
+  - `fetch_nbk`: the skip rule, the request, the checks and the two renames.
+
+**How it works:**
+`fetch_nbk` first looks for the landed body and its meta file. If both exist, it logs "already landed" and returns without any HTTP request. If only one exists, it fails and asks for the stray file to be deleted by hand.
+
+`src/recon/fx.py:53`
+```python
+    if body_path.exists() and meta_path.exists():
+        log.info("already landed: %s", body_path.name)
+        print(f"already landed: {body_path.name}")
+        return {"action": "skipped"}
+```
+
+Otherwise it refuses any R on or after today (UTC) and requests R-6 to R. It uses a 10-second timeout and the project's User-Agent. Seven days always contain weekdays, so the answer is never empty only because of a weekend. When R-6 has no rate, Frankfurter puts the last earlier rate first. `check_rates` allows exactly that one row.
+
+`src/recon/fx.py:35`
+```python
+        if d < start and i > 0:                           # only the first row may be the carry-in before R-6
+            raise ValueError(f"row {i} is dated {d}, before {start}; only the first row may be")
+```
+
+`check_rates` also requires USD/KZT, no date after R, and dates in strictly increasing order. Rates are parsed with `parse_float=str`. The body is written byte for byte as received. The meta file (`fetched_at`, `http_status`, `sha256`, `url`) goes next to it. Both are first written to `.tmp` names. The meta file is renamed first and the body last, because the body's final name is the "landed" signal.
+
+`src/recon/fx.py:77`
+```python
+    os.replace(meta_tmp, meta_path)                       # the meta first: the body's final name means "landed"
+    os.replace(body_tmp, body_path)
+```
+
+This follows ADR-0004 and "Landing (immutable)" in `docs/specs/data_and_generator.md`. It rejects three alternatives:
+- Fetching again on every run, because a restated rate would break the rerun proof.
+- Frankfurter's blended rates, because they mix sources.
+- FLOAT64 rates, because binary rounding changes the exact rate.
+
+**Commands and output:**
+- First fetch for 2026-10-31: `fetch: {"action": "fetched", "rows": 6}`.
+- The body had six rows: 2026-10-23 at 447.94, 2026-10-26 and 2026-10-27 at 451.05, 2026-10-28 at 455.63, 2026-10-29 at 457.09, and 2026-10-30 at 453.71. As the spec predicts for R = 2026-10-31, it starts with 2026-10-23. These rates are real.
+- Meta: `{"fetched_at":"2026-11-02 17:44:45+00:00","http_status":200,"sha256":"64fe19dd...","url":"https://api.frankfurter.dev/v2/rates?providers=nbk&base=USD"es=KZT&from=2026-10-25&to=2026-10-31"}`.
+- Second call for the same date: `already landed: arrival_date=2026-10-31.json`, then `fetch: {"action": "skipped"}`, with no HTTP request.
+- `fetch --date 2026-11-02` was refused with `ValueError: run date 2026-11-02 has not ended in UTC (today is 2026-11-02): use yesterday or earlier`. The CLI's `check_run_date` raised it before `fetch_nbk` ran.
+
+**What went wrong:** ruff rule RUF007 flagged `zip(dates, dates[1:])` and asked for `itertools.pairwise`. The code was changed to `pairwise(dates)` (`src/recon/fx.py:38`). This was a lint fix, not a bug, so there is no failure-log entry.
+
+**Interview questions:**
+1. *Why land the FX answer once and never fetch it again?*
+   The rates are real data, and a provider can restate them later. If each run fetched again, a rerun of an old day could get different rates and different marts, and the rerun proof would fail. Landing once and committing `landing/fx/` makes every rerun and every fresh clone use the same bytes.
+2. *Why does the answer for R = 2026-10-31 start on 2026-10-23?*
+   R-6 is 2026-10-25, a Sunday. NBK publishes no rate on weekends, so Frankfurter adds the last rate before the range, which is Friday 2026-10-23. The check allows exactly one such early row, as the first row, so the carry-forward in dbt has a rate to start from.
+
+## S4.3: the host CLI for full development days
+
+**Date and commit:** 2026-11-02, `a33593f` (CLI and Makefile) and `5a83aa0` (the 14 FX files)
+
+**What was built:**
+- `src/recon/cli.py`:
+  - `guarded`: runs `check_run_date` before anything else.
+  - The subcommands `fetch`, `load` (writes to `$RAW_DATASET`), `day` (generate, then fetch, then load) and `days` (every date in a range, oldest first).
+  - `generate` is now guarded too.
+- `Makefile`: `make day` now runs `recon.cli day`, and `make days FROM= TO=` is new. Both refuse empty values.
+- `landing/fx/provider=nbk/`: 7 bodies and 7 meta files, committed.
+
+**How it works:**
+Every subcommand calls `guarded` first. It reads the environment and calls `check_run_date` with today's UTC date. A date that is too old, or that has not ended yet, is refused before any file is written or any job runs. The wall clock is only used for this check. It never shapes data.
+
+`src/recon/cli.py:15`
+```python
+    check_run_date(run_date, env.world_start, datetime.now(UTC).date())
+```
+
+`day` runs the steps in the same order as the DAG: generate, fetch, load. `load` runs `load_day` for each of the 3 tables into `$RAW_DATASET`, which the Makefile sets to `raw_dev`. `days` makes one client and loops in Python, oldest date first.
+
+`src/recon/cli.py:76`
+```python
+    while d <= args.to_date:                              # oldest first; the loop lives in Python, not in shell
+        day(argparse.Namespace(date=d), client)
+```
+
+`Makefile:48`
+```make
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "days: set FROM=YYYY-MM-DD TO=YYYY-MM-DD" >&2; exit 1; }
+```
+
+The host runs the same functions as the DAG, so logic can be debugged quickly without touching the Airflow datasets. This follows `docs/build_plan.md` step S4.3, the make-target table in the plan, and the "Idempotency" concept. It rejects a shell loop in the Makefile, and it rejects the unguarded M3 `generate`, which had no date check.
+
+**Commands and output:**
+- `make days FROM=2026-10-25 TO=2026-10-31` loaded these rows per day (synthetic events / synthetic statement lines / real FX rows):
+
+  | Day | Events | Statement lines | FX rows |
+  |---|---|---|---|
+  | 2026-10-25 | 194 | 209 | 5 |
+  | 2026-10-26 | 210 | 187 | 5 |
+  | 2026-10-27 | 206 | 200 | 5 |
+  | 2026-10-28 | 217 | 198 | 5 |
+  | 2026-10-29 | 205 | 193 | 5 |
+  | 2026-10-30 | 214 | 212 | 6 |
+  | 2026-10-31 | 215 | 202 | 6 |
+
+  The FX fetch for 2026-10-31 was skipped because it was already landed.
+- Each `raw_dev` table then had 7 partitions, 2026-10-25 to 2026-10-31.
+- The count-and-sum query for 2026-10-28 before the reload gave `payment_events` n=217, s=81297064 and `settlement_lines` n=198, s=57491530 (synthetic).
+- `make day DATE=2026-10-28` (FX skipped, already landed), then the same query: identical results.
+- `git check-ignore landing/payment_events` printed `landing/payment_events`.
+- `git ls-files landing/fx` listed the 14 files (7 bodies, 7 meta).
+- `make check`: 9 passed, ruff clean.
+
+**What went wrong:** Nothing.
+
+**Interview questions:**
+1. *Why does reloading 2026-10-28 give the same counts and sums?*
+   The generator writes byte-identical files for the same date, and the FX file is not fetched again. The loader then replaces only the `$20261028` partition of each table with one WRITE_TRUNCATE job. So the rerun puts back exactly the rows it removed, and no other day changes.
+2. *Why are the FX files committed but the synthetic landing files ignored?*
+   The synthetic files can always be rebuilt from the seed, so committing them would add nothing. The FX files are real answers from an outside API that may change or restate them. Committing them is the only way a fresh clone gets the same rates.
+
+Next step: S5.1.
+
+## Explain check M4
+
+**1. Why one load job per table per day?**
+
+A WRITE_TRUNCATE job replaces the whole target partition with what that one job loads. If each statement file had its own job, the second job would wipe out the first MID's rows. WRITE_APPEND would add a full copy of the day on every rerun.
+
+So `load_day` reads every expected file for the day, joins the rows, checks them, and makes exactly one write in `load_partition` (`src/recon/load.py:110` to `:142`). After the job, `job.output_rows` must equal the number of landed rows (`src/recon/load.py:139`). That one job per (table, day) is what makes a rerun idempotent without any DML.
+
+**2. What exactly does WRITE_TRUNCATE on `t$20261025` replace?**
+
+Only the rows in partition 2026-10-25 of table `t`. Every other partition stays as it was. The table schema is kept, and Google applies the truncation as one atomic update when the job completes. A reader sees the old day or the new day, never a mix.
+
+The destination is built at `src/recon/load.py:125` as `{table}${run_date:%Y%m%d}`, with no dashes. Every row must belong to that day. `load_day` checks `_arrival_date` (and `DATE(delivered_ts)` for events) before any job runs, and BigQuery would also refuse a row for another partition. The schema passed to the job comes from the same JSON as the table, because a different schema would fail the job.
+
+**3. What happens on an empty day?**
+
+`load_partition` deletes the partition with `client.delete_table(dest, not_found_ok=True)` (`src/recon/load.py:127`) and returns `action: "deleted"` with 0 rows. Deleting a partition is a table operation, not DML, so the sandbox allows it. If the partition does not exist, the delete does nothing.
+
+The delete is needed because WRITE_TRUNCATE with zero rows is not run at all. Without the delete, a rerun of a day that is now empty would keep stale rows from an earlier run. A missing expected file is different from an empty day: `read_ndjson` raises `FileNotFoundError` (`src/recon/load.py:77`). Only a 0-byte file counts as a day with no rows.
+
+**Next step:** S5.1, project config, packages, seeds and sources.
+
+## Review of M4 (2026-11-02)
+
+Three reviewers compared `src/recon/load.py`, `src/recon/fx.py`, `src/recon/cli.py` and the `Makefile` with the load protocol, the FX landing rules and the host guard. None reported a deviation, so nothing was changed.
+
+**Next step:** S5.1, project config, packages, seeds and sources.
