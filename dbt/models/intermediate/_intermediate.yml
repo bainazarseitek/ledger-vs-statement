@@ -39,3 +39,32 @@ models:
         description: "From this day on (inclusive) a missing statement line is an exception."
         data_tests:
           - not_null
+
+  - name: int_fx__usd_rates_daily
+    description: "One row per (currency, day): the USD rate for every calendar day, KZT from NBK and USD as identity rows. Weekend and holiday values are carried forward from the last published rate. This is a project convention, not NBK's official rate for that day. REAL."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [currency, day]
+    columns:
+      - name: currency
+        description: "KZT from NBK rates, USD as identity rows."
+      - name: day
+        description: "Calendar day."
+      - name: provider
+        description: "nbk for KZT, identity for USD."
+      - name: units_per_usd
+        description: "Currency units per 1 USD on this day (NUMERIC). 1 for USD."
+        data_tests:
+          - not_null
+      - name: rate_date
+        description: "The date of the rate actually used."
+        data_tests:
+          - not_null
+      - name: carry_days
+        description: "day minus rate_date. 0 on a day with its own rate. Above fx_max_carry_days the build fails (staleness gate)."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: "{{ var('fx_max_carry_days') }}"
