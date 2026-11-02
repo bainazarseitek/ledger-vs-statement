@@ -1,0 +1,281 @@
+{
+  "convention": "the carry-forward is a project convention, not NBK's official rate for that day",
+  "days": [
+    {
+      "carry_days": 2,
+      "day": "2026-10-04",
+      "nbk_rate": "447.73",
+      "project_rate": "441.91",
+      "rate_date": "2026-10-02",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-05",
+      "nbk_rate": "447.73",
+      "project_rate": "447.73",
+      "rate_date": "2026-10-05",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-06",
+      "nbk_rate": "454.98",
+      "project_rate": "454.98",
+      "rate_date": "2026-10-06",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-07",
+      "nbk_rate": "453.65",
+      "project_rate": "453.65",
+      "rate_date": "2026-10-07",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-08",
+      "nbk_rate": "447.14",
+      "project_rate": "447.14",
+      "rate_date": "2026-10-08",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-09",
+      "nbk_rate": "448.94",
+      "project_rate": "448.94",
+      "rate_date": "2026-10-09",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 1,
+      "day": "2026-10-10",
+      "nbk_rate": "453.93",
+      "project_rate": "448.94",
+      "rate_date": "2026-10-09",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 2,
+      "day": "2026-10-11",
+      "nbk_rate": "453.93",
+      "project_rate": "448.94",
+      "rate_date": "2026-10-09",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-12",
+      "nbk_rate": "453.93",
+      "project_rate": "453.93",
+      "rate_date": "2026-10-12",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-13",
+      "nbk_rate": "451.31",
+      "project_rate": "451.31",
+      "rate_date": "2026-10-13",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-14",
+      "nbk_rate": "448.45",
+      "project_rate": "448.45",
+      "rate_date": "2026-10-14",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-15",
+      "nbk_rate": "450.62",
+      "project_rate": "450.62",
+      "rate_date": "2026-10-15",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-16",
+      "nbk_rate": "454.14",
+      "project_rate": "454.14",
+      "rate_date": "2026-10-16",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 1,
+      "day": "2026-10-17",
+      "nbk_rate": "452.12",
+      "project_rate": "454.14",
+      "rate_date": "2026-10-16",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 2,
+      "day": "2026-10-18",
+      "nbk_rate": "452.12",
+      "project_rate": "454.14",
+      "rate_date": "2026-10-16",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-19",
+      "nbk_rate": "452.12",
+      "project_rate": "452.12",
+      "rate_date": "2026-10-19",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-20",
+      "nbk_rate": "452.59",
+      "project_rate": "452.59",
+      "rate_date": "2026-10-20",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-21",
+      "nbk_rate": "450.69",
+      "project_rate": "450.69",
+      "rate_date": "2026-10-21",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-22",
+      "nbk_rate": "448.61",
+      "project_rate": "448.61",
+      "rate_date": "2026-10-22",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-23",
+      "nbk_rate": "447.94",
+      "project_rate": "447.94",
+      "rate_date": "2026-10-23",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 1,
+      "day": "2026-10-24",
+      "nbk_rate": "451.05",
+      "project_rate": "447.94",
+      "rate_date": "2026-10-23",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 2,
+      "day": "2026-10-25",
+      "nbk_rate": "451.05",
+      "project_rate": "447.94",
+      "rate_date": "2026-10-23",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-26",
+      "nbk_rate": "451.05",
+      "project_rate": "451.05",
+      "rate_date": "2026-10-26",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-27",
+      "nbk_rate": "451.05",
+      "project_rate": "451.05",
+      "rate_date": "2026-10-27",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-28",
+      "nbk_rate": "455.63",
+      "project_rate": "455.63",
+      "rate_date": "2026-10-28",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-29",
+      "nbk_rate": "457.09",
+      "project_rate": "457.09",
+      "rate_date": "2026-10-29",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 0,
+      "day": "2026-10-30",
+      "nbk_rate": "453.71",
+      "project_rate": "453.71",
+      "rate_date": "2026-10-30",
+      "source": "fetched",
+      "weekday": true
+    },
+    {
+      "carry_days": 1,
+      "day": "2026-10-31",
+      "nbk_rate": "453.87",
+      "project_rate": "453.71",
+      "rate_date": "2026-10-30",
+      "source": "fetched",
+      "weekday": false
+    },
+    {
+      "carry_days": 2,
+      "day": "2026-11-01",
+      "nbk_rate": "453.87",
+      "project_rate": "453.71",
+      "rate_date": "2026-10-30",
+      "source": "fetched",
+      "weekday": false
+    }
+  ],
+  "marts_dataset": "analytics",
+  "measured_at_utc": "2026-11-02 20:03:49+00:00",
+  "n3": {
+    "C_carried_days": 9,
+    "E_agreeing": 20,
+    "E_own_rate_days": 20,
+    "W_carried_days_differing": 9,
+    "X_day": "2026-10-04",
+    "X_max_abs_diff_kzt": "5.82",
+    "Y_bps": "130.0",
+    "as_of_date": "2026-11-01",
+    "days_without_nbk_rate": [],
+    "scope_start": "2026-10-04",
+    "weekday_disagreements": []
+  }
+}
