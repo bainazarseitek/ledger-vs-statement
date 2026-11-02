@@ -2706,7 +2706,7 @@ The identity and the preservation test show that no minor unit is lost, duplicat
 
 ## S10.4: the tag `v1.0` (sub-step 3)
 
-**Date and commit:** 2026-11-03 (UTC). The annotated tag `v1.0` points at `9e246e7`.
+**Date and commit:** 2026-11-02 (UTC). The annotated tag `v1.0` points at `9e246e7`.
 
 **What was done:**
 - The four scans from S10.4 in `docs/build_plan.md` were run again after the journal commit. Each printed `exit=1`, the `keys .env` log printed nothing, and the README placeholder grep printed nothing.
