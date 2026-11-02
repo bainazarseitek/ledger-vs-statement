@@ -202,7 +202,7 @@ Three dates:
 
 ## Tests and data quality
 
-The cross-ledger identity is not a tautology: the top-down gap comes from `int_ledger__captures` and `stg_psp__settlement_lines`, which never touch the matcher, while the bottom-up components come from `fct_recon_lines`. So a matcher that loses, duplicates or misdates a line turns `assert_recon_decomposition_closes` red: mutations 1, 3 and 4 below did exactly that. The identity does not check whether each line got the right reason; the unit tests UT1 and UT2 check that on hand-made rows, and both were seen red before the logic existed ("Planned red runs (not bugs)" in [`docs/failure_log.md`](docs/failure_log.md)).
+The cross-ledger identity is not a tautology: the top-down gap comes from `int_ledger__captures` and `stg_psp__settlement_lines`, which never touch the matcher, while the bottom-up components come from `fct_recon_lines`. So when lines are lost or duplicated, `assert_recon_decomposition_closes` turns red: mutations 1 and 4 below lost lines in the matcher, mutation 3 duplicated events in staging, and all three turned it red. By design a misdated line would break the identity too, but no mutation in [`docs/testing.md`](docs/testing.md) tried that. The identity does not check whether each line got the right reason. The unit test UT2 checks each line's `match_status`, `primary_reason` and `date_shift` in `fct_recon_lines` on hand-made rows, and UT1 checks the cutoff dates those depend on (`expected_accounting_date` and `due_date` in `int_ledger__captures`). Both were seen red before the logic existed ("Planned red runs (not bugs)" in [`docs/failure_log.md`](docs/failure_log.md)).
 
 ### Three kinds of evidence
 
@@ -260,10 +260,10 @@ Each mutation was applied on a scratch branch; `dbt run` and then `dbt test` wer
 
 | # | Mutation | Expected red | Observed red |
 |---|---|---|---|
-| 1 | `FULL OUTER JOIN` changed to `INNER JOIN` in `fct_recon_lines` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
+| 1 | `FULL OUTER JOIN` changed to `INNER JOIN` in `fct_recon_lines` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
 | 2 | `as_of_date < due_date` changed to `<=` | UT2 | `ut_lines_status_and_date_shift` (UT2) |
 | 3 | `QUALIFY` removed from `stg_psp__payment_events` | unique `event_id`, unique `payment_id` | `unique_stg_psp__payment_events_event_id`, `unique_int_ledger__captures_payment_id`, `unique_fct_recon_lines_payment_id`, `dbt_utils_unique_combination_of_columns_fct_recon_exceptions_payment_id__cause`, `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` |
-| 4 | the statement-side `record_type = 'SALE'` filter moved after the join | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
+| 4 | the statement-side `record_type = 'SALE'` filter moved after the join | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
 
 ### Python tests
 
