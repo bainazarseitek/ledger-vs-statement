@@ -2505,3 +2505,201 @@ The mart statuses depend on `as_of_date`, for example `in_transit` against `due_
 - The reconciliation never converts currency, so this only affects the USD reporting columns.
 
 **Next step:** S10.1, the README first screen and sections.
+
+## S10.1: the README first screen and the two saved analyses
+
+**Date and commits:** 2026-11-02 (UTC), `5b19df0`, then the review fix `d3a6f38`.
+
+**What was built:**
+- `README.md`: every section of the skeleton, written from the evidence. That covers the banner line, the Mermaid data flow, the results table (N1, N2, N3), the quickstart, "What this does not prove" and "How I used AI".
+- `dbt/analyses/exceptions_queue.sql`: the open work queue from `fct_recon_exceptions`, oldest and largest first.
+- `dbt/analyses/one_mid_day_bridge.sql`: one MID-day's gap and its dated components from `fct_recon_daily`.
+
+**How it works:**
+- Every number in the README is copied from `docs/evidence/2026-11-02/summary.json`, `compare.json`, `fx_report.json`, `storage.json` or `docs/testing.md`. The results paragraph names its source and commit (`README.md:23`):
+  ```text
+  **Results.** Measured on 2026-11-02, window 2026-10-03..2026-11-01, seed 20261101, as of 2026-11-01, commit `ae8e1a2e...`.
+  ```
+- An analysis is a SQL file that dbt compiles (it fills in `ref()`) but never builds, so it writes nothing to BigQuery. The queue orders by age, then by size (`dbt/analyses/exceptions_queue.sql:17` to `:21`):
+  ```sql
+  order by
+      e.age_days desc,
+      abs(e.amount_minor) desc,
+      e.payment_id,
+      e.cause
+  ```
+  The last two keys make the order total, so two runs list the rows in the same order.
+- Why this way: S10.1 in `docs/build_plan.md` and "Saved analyses (`dbt/analyses/`)" in `docs/specs/dbt_project.md`. The rejected alternative was building the queue as a model. That would add a table the specs do not name, and every byte written counts against the sandbox quota.
+
+**Commands and output:**
+- `uv run dbt --version`: dbt-core 1.12.6, bigquery 1.12.1.
+- `(cd dbt && uv run dbt compile --select exceptions_queue one_mid_day_bridge --target airflow)`: `Found 9 models, 2 analyses, 42 data tests, 3 seeds, 3 sources`. The compiled queue reads `<project>.analytics.fct_recon_exceptions`. Compile is one of the two read-only commands allowed on target `airflow` from the host.
+- The compiled SQL, run through `recon.bq`: `exceptions_queue` returned 177 rows. `one_mid_day_bridge` for `mid_kzt_01` on 2026-10-21 returned 79 rows. These are checks of the queries, not results, and they are not in the README.
+- `grep -nE '<!--|\[WRITE|\[[A-Za-z]{1,8}\]([^(]|$)' README.md`: no output, exit 1.
+- The banner line matched the skeleton word for word (count 1).
+- Vocabulary grep: the only hit is "Production experience. This is a learning project." in "What this does not prove". It negates the word, as `docs/learning/concepts.md` "M10. Publish, gate G2" does.
+- `make check`: 9 passed, ruff clean. The em dash check and the banned-word grep were both clean (exit 1).
+
+**What went wrong:**
+- The review found two mistakes in the README. Fixed in `d3a6f38`:
+  1. Mutation-table rows 1 and 4 had lost a cell, so the observed red tests sat under "Expected red".
+  2. A paragraph said the identity test catches a misdated line, but no mutation in `docs/testing.md` shows that. It now claims only what the mutation check shows.
+- Neither was a bug in the code, so there is no failure-log entry.
+- Not done: the two screenshots `docs/img/exceptions_queue.png` and `docs/img/airflow_grid.png`. They need the BigQuery console and the Airflow UI in a browser, with the project id cropped out, so they are left to the owner (see S10.4 below). The README does not embed them, so no broken image is published.
+
+**Interview questions:**
+1. *Why is the work queue an analysis and not a model?*
+   It is a view on demand for an analyst. As an analysis it costs nothing to store. dbt compiles it with the right dataset names, and you paste it into the console or run it with `dbt show`.
+2. *How do you make sure no number on the first screen is invented?*
+   Every number is copied from a file under `docs/evidence/` that a `make` target wrote, and the paragraph names that file and the commit. The placeholder grep fails if any `[N]` is left over.
+
+## S10.2: ADR-0001 to 0003 accepted; the failure log checked
+
+**Date and commits:** 2026-11-02 (UTC), `60a4aa3`, then the review fix `5a0f6a5`.
+
+**What was built:**
+- `docs/adr/0001-warehouse-bigquery-sandbox.md`, `0002-raw-write-path-and-time-model.md` and `0003-reconciliation-method.md`: rewritten in plain first-person words and set to `**Status:** Accepted`.
+- `docs/adr/README.md`: index rows 0001 to 0003 now read Accepted, "accepted 2026-11-02". ADR-0004 to 0010 stay Proposed.
+- `docs/failure_log.md`: read in full, and no change was needed.
+
+**How it works:**
+- In build mode the agent writes the "in your words" steps (`AGENTS.md`, "Build mode": "Where a step says a document is written 'in your words' (design doc, ADRs, README...), you draft it"). This overrides "Writing style" rule 6, which says an agent never marks an ADR Accepted. So that nobody is misled about authorship, each accepted ADR now says who wrote it (`docs/adr/0001-warehouse-bigquery-sandbox.md:9`):
+  ```text
+  - **Written by:** an AI agent in build mode (the owner's decision of 2026-11-02 in `AGENTS.md`, heading "Build mode"), checked against the code and `docs/evidence/`. "I" below is the project's voice.
+  ```
+- The commit subject "accept ADR-0001 to 0003 in my own words" is the exact subject that S10.2 in `docs/build_plan.md` prescribes. The "my" in it is the plan's wording. The ADR files and the README "How I used AI" section say that the agent wrote the text. The commit is pushed, so its message stays as it is (`AGENTS.md`, "Commit style" rule 9).
+- Every statement in the three ADRs was checked against the code:
+  - `load_day` and `load_partition` in `src/recon/load.py`;
+  - the clustering in the schema JSON files;
+  - `stg_recon__as_of`;
+  - the `CASE` logic and the fee formulas in `fct_recon_lines`;
+  - the gap inputs and the 7 components in `fct_recon_daily`.
+- Numbers in the ADRs come only from `docs/evidence/`. Design estimates are labelled as estimates.
+
+**Commands and output:**
+- `grep -h "Status:**" docs/adr/0*.md`: 0001 to 0003 Accepted, 0004 to 0010 Proposed.
+- The ADR-0001 G0 table and the P2 text, diffed against the previous commit: unchanged.
+- The failure log: F-001 has every field of the entry format. The planned red runs for UT1 and UT2 are complete. The UT3 and UT4 rows stay empty, because they are U1 work.
+- `make check`: 9 passed, ruff clean. The em dash check and the banned-word grep were both clean.
+
+**What went wrong:**
+- The first draft of ADR-0001 said that no quota error had appeared. No evidence file proves that. It now says that the evidence shows `"plan_b": false` and that the failure log has no storage-quota entry.
+- The review found that the G0 table credited all of its rows to `g0_probe.json`. That file holds only P1 to P7 and F1. `5a0f6a5` credits only those rows to the file, and the S1.1 to S1.3 rows to the journal.
+- Neither was a code bug, so there is no failure-log entry.
+
+**Interview questions:**
+1. *Why is ADR-0002's time model three dates and not one?*
+   Arrival date (which day's files), booking date (the ledger cut-off) and accounting date (the PSP's settlement day) answer different questions. Raw is partitioned by arrival date, so a rerun of one day replaces exactly that day's files.
+2. *Who wrote the ADRs, and how can a reader tell?*
+   An AI agent in build mode, from the code and the evidence. Each accepted ADR has a "Written by" line, and the README "How I used AI" section says so too.
+
+## S10.3: the clean-clone check, and the walkthrough
+
+**Date and commits:**
+- The clean-clone check: 2026-11-02 (UTC). No commit, because nothing needed fixing. The push before it was `52c353d..5a0f6a5`.
+- The walkthrough: `e0ef76a`, then the review fix `30d9f12`.
+
+**What was built:**
+- No repo file for the check: it ran in a `mktemp -d` folder that was deleted afterwards.
+- `docs/walkthrough.md` (764 lines): the owner's study guide. Its sections follow `AGENTS.md`, "The walkthrough":
+  - "The problem and the results"
+  - "The architecture"
+  - "File by file, in the order the data flows"
+  - "Design decisions and their alternatives"
+  - "Concepts, each tied to its file"
+  - "How it was built"
+  - "How to run it from a clean clone"
+  - "Drill" (20 questions and five explain-a-file exercises)
+
+**How it works:**
+- The check proves that a stranger's clone installs, tests, parses and builds without any local state: no keys, no `.env` values, no hook. `dbt parse` gets dummy variables (`GCP_PROJECT=ci-dummy`, `DBT_KEYFILE=/nonexistent/sa.json`) because parse needs them to exist but never connects.
+- The walkthrough was written from the code, with current line numbers re-read from the files. Some line numbers quoted in older journal entries have drifted. For example, the S5.6 entry cites `fct_recon_daily.sql:230` for the identity, which is now at `:252` to `:262`. The walkthrough's numbers are the current ones.
+
+**Commands and output (clean clone):**
+1. `gh repo clone bainazarseitek/ledger-vs-statement`: exit 0, HEAD `5a0f6a5`.
+2. `cp .env.example .env`: exit 0, placeholders left as they are.
+3. `make setup`: exit 0. `uv sync`, then `dbt deps` printed `Installed from version 1.4.1`.
+4. `make check`: exit 0, `9 passed in 2.89s`, ruff `All checks passed!`.
+5. `dbt parse` with the dummy variables: exit 0, `Running with dbt=1.12.6`, `Registered adapter: bigquery=1.12.1`.
+6. `docker compose build`: exit 0. A second build with `--no-cache` (beyond the plan, because the first one reused local layer cache) also exited 0.
+
+**Commands and output (walkthrough):**
+- A vocabulary scan of `docs/walkthrough.md`: no match.
+- `make check`: 9 passed. The em dash check and the banned-word grep were both clean.
+
+**What went wrong:**
+- The clean clone passed on the first run, so there is no fix and no failure-log entry.
+- A note on the uncached build: it re-tagged `ledger-vs-statement-airflow:3.3.2`, and pip resolved newer versions of some unpinned transitive dependencies in the dbt venv (the log shows `google_cloud_bigquery-3.47.0`). dbt-core 1.12.6 and dbt-bigquery 1.12.1 are pinned and unchanged. The running containers keep the old image until they are recreated. Nothing failed, so this is not a failure-log entry. It is a reproducibility limit of `docker/requirements-dbt.txt`, which pins only the direct dependencies.
+- The walkthrough review found two wrong citations. Fixed in `30d9f12`:
+  1. Drill answer 15 put UT1's `pay_k2` on the 20th, but UT1 expects 2026-10-21.
+  2. A reason was given for why only UT2 caught mutation 2, and nothing supports that reason. The sentence now says only what `docs/testing.md` records.
+
+**Interview questions:**
+1. *What does the clean-clone check prove, and what does it not?*
+   It proves that the repo installs, lints, tests, parses and builds the image from its own files and locks. It does not touch BigQuery, so it does not prove the pipeline runs in another person's project. That takes their own sandbox setup (README "Run it in full").
+2. *Why does `dbt parse` need `GCP_PROJECT` if it never connects?*
+   `profiles.yml` reads it with `env_var()`, and parse renders the profile. A missing variable is a compile error, so a dummy value is enough.
+
+## S10.4: name review and the NBK terms (sub-steps 1 and 2)
+
+**Date and commits:** 2026-11-02 (UTC), `611d926` and `fb5f68c`, pushed (`5a0f6a5..fb5f68c`; the pre-push hook ran and passed).
+
+**What was built:**
+- `README.md`, "Licence": a line on NBK's Data License (`README.md:605`).
+- `README.md`: the "Design decisions" table now shows ADR-0001 to 0003 as Accepted, and the "How I used AI" line says who rewrote them.
+
+**How it works:**
+- Sub-step 1 runs the hook's word list against four places: the file contents, the file paths, every commit message, and the branch and tag names on GitHub. It also lists any commit that ever touched `keys` or `.env`. Each pattern is wrapped as `(^|[^[:alnum:]])word([^[:alnum:]]|$)`, so a word glued to `_` is caught too, unlike the hook's `-w` match.
+- Sub-step 2 re-checked the NBK terms, because `landing/fx/` commits NBK rates. NBK now publishes a Data License page. It allows copying, publishing and distributing its official statistical information free of charge, with reference to the source. It does not forbid sharing the files, so the README follows it and the step goes on.
+
+**Commands and output:**
+- The four scans (from S10.4 in `docs/build_plan.md`): `exit=1` each, before the edits and again after both commits. `git ls-remote` listed `refs/heads/main` and `refs/tags/g1-freeze`, so the ref scan had real input.
+- `git log --all --oneline -- keys .env`: no output.
+- The README placeholder grep: no output, exit 1, before and after.
+- A secret-pattern scan over the tree and the history (private keys, PEM headers, API and OAuth token prefixes): only `<project id>` placeholder text in two planning documents, and 0 hits in the history.
+- The project id: it is the same string as the repo name (the owner's decision in M0), so every match is the repo name. It appears in no other form.
+- Every README number checked against the evidence files: all exact.
+- `make check` and the em dash check passed before each commit.
+
+**What went wrong:**
+- No bug.
+- Stale wording found by reading: the README still said ADR-0001 to 0003 were Proposed and that "All ten ADRs are still Proposed". Fixed in `fb5f68c`.
+- Out of date and not edited, because it is a planning document: the NBK row of "Licences" in `docs/specs/data_and_generator.md` still says "None published".
+
+**Interview questions:**
+1. *Why scan commit messages and ref names, not only files?*
+   Once the repo is public, the history is public and permanent, and the plan forbids rewriting it. A banned word in an old commit message cannot be removed later without a force push.
+2. *What would you do if NBK's terms forbade sharing the rate files?*
+   Stop before making the repo public (S10.4 sub-step 2). `landing/fx/` is committed, so the files would have to leave the history. That needs the owner's decision.
+
+**Not done, and why:**
+- Sub-step 3, the tag `v1.0`: it comes right after this entry is committed.
+- Sub-steps 4 to 7 are owner-only (`AGENTS.md`, "Build mode", owner-only action 5):
+  - make the repo public;
+  - set the description;
+  - add the 9 topics;
+  - check the repo in a private browser window.
+- The two S10.1 screenshots: they need the BigQuery console and the Airflow UI.
+
+## Explain check M10
+
+*What does this project not prove?*
+README "What this does not prove" lists:
+- production experience (it is a learning project);
+- real PSP behaviour or real statement file formats;
+- detection quality on real data;
+- behaviour at scale (about 200 payments a day by design);
+- any fact about any real company;
+- that every label is right.
+
+The identity and the preservation test show that no minor unit is lost, duplicated or put on the wrong day. They do not show that each line got the right reason. Only N3 is measured on real data, and it measures a reporting convention, not the reconciliation.
+
+*What did AI write?*
+- In build mode, an AI agent wrote the code (core logic included) and every document in the build: the README, the three accepted ADRs, this journal and the walkthrough. Every agent commit carries "written with AI".
+- The planning documents were drafted with an AI assistant before the build and reviewed by the owner.
+- The owner chose the problem and the constraints, reviewed the plan, did the Google Cloud setup and the key, and wrote the private banned-word list.
+- The model answer in `docs/learning/concepts.md`, "M10. Publish, gate G2", was written for the plan, where the owner writes the core logic. It is out of date on this point since the build-mode decision of 2026-11-02. The README "How I used AI" section is the current account.
+
+**Gate G2:** everything measured is true and published in the README, and nothing is listed as "in progress". The floor was not cut, so the tag is `v1.0`.
+
+**Next step:** tag `v1.0` (S10.4 sub-step 3). Then the owner-only steps: S10.4 sub-steps 4 to 7, and the two screenshots from S10.1.
