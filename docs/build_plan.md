@@ -39,6 +39,8 @@ Concept links name a heading in `docs/learning/concepts.md` exactly, for example
 
 ## How to use this plan
 
+> **Build mode (owner decision, 2026-11-02).** An AI agent builds this plan end to end, as `AGENTS.md`, heading "Build mode", describes. Where a step says "You write", "you run", "your words" or names the owner, the agent does it, except the owner-only actions listed there. This overrides "Rules: who writes what", the tutor workflow and items 2, 3, 6 and 13 of "Rules for agents that follow this plan". The clock, the time boxes and the slip rule do not apply. The agent records every step in `docs/build_journal.md` and writes `docs/walkthrough.md` at the end.
+
 Before each milestone, read the cards listed for it in `docs/learning/concepts.md`, heading "Learn before each milestone". Card reading is not in the clock. For Sunday, read the M0 to M2 cards, `docs/design.md` and the "Defect catalog" before you start; read the M3 to M6 cards in the breaks.
 
 ### Starting a session
@@ -49,7 +51,7 @@ Before each milestone, read the cards listed for it in `docs/learning/concepts.m
 
 A first prompt you can paste before S0.3:
 
-> I am on step S0.1. Read ~/Developer/ledger-vs-statement-plan/AGENTS.md and follow it, then read that step in ~/Developer/ledger-vs-statement-plan/docs/build_plan.md. Open no other file in that folder unless I name it. Before you write any code, explain exactly what you will write and why, and wait for my go-ahead.
+> Start the build. Read ~/Developer/ledger-vs-statement-plan/AGENTS.md fully and follow it, in particular "Build mode". Then read ~/Developer/ledger-vs-statement-plan/docs/build_plan.md and build from step S0.1 sub-step 4 to the end of M10. Open no other file in that folder unless the plan or I name it. Stop only for owner-only actions and "Stop and ask" cases.
 
 ### With a tutor agent
 
@@ -98,7 +100,7 @@ The agent may write any code you asks for, including core logic, as long as it f
 | The generator's world and defect logic, the loader and FX logic, every SQL model and test, both DAGs, the fingerprint SQL and the comparison, the queries in `results.py` and `fx_report.py`, the scoring rules (U1), every README sentence, every ADR and every failure-log entry | `.gitignore`, `.dockerignore`, `Dockerfile`, `docker/requirements-dbt.txt`, the compose edits, the Makefile, `.env.example`, `dbt/profiles.yml` and the first `dbt/dbt_project.yml`, YAML column lists, the schema JSON files, `src/recon/bq.py`, the loading code in `src/recon/config.py`, argparse and file IO wrappers, `LoadJobConfig`, urllib boilerplate, `scripts/g0_probe.py`, the LICENSE text, the CI YAML (U2) |
 
 - **At most 60 lines at a time.** Agent-written code arrives in parts of at most 60 lines, each explained before and walked through after. Exception: `scripts/g0_probe.py`, delivered in parts and kept as specified. Then you add a comment to each block in your own words and explain the file back in 2 minutes.
-- **Mark AI-written work.** A commit that contains agent-written code ends with the line `written with AI, reviewed` (see "Commit messages").
+- **Mark AI-written work.** A commit that contains agent-written code ends with the line `written with AI` (see "Commit messages").
 - **Try first.** For logic you choose to write yourself, spend 20-30 minutes on your own before asking. For plumbing blockers (Dockerfile, compose, IAM, auth), spend about 15 minutes, then ask, because the clock matters more there.
 - **The line budget for v1.0.** About 900-1,000 lines of logic you must explain: generator about 220, config about 60, loader and FX about 130, DAGs about 120, SQL about 350, scripts about 150. On top of that, about 400 lines of YAML and config. If a file grows far past its share, stop and simplify.
 - **The AI rules from your master plan apply throughout:** try first, ask "why" and not "do it", debug yourself first, use AI as an examiner, and do not trust the feeling of speed. See `docs/learning/concepts.md`, "Rules for learning with AI".
@@ -230,7 +232,7 @@ The format is the one in `AGENTS.md`, heading "Commit style":
 
 - Subject: `<type>(<area>): <what changed, in the imperative> (<step id>)`, at most 72 characters. Types: `feat`, `fix` (its body names the failure-log entry), `test`, `docs`, `build` (Dockerfile, compose, `pyproject.toml`, Makefile), `ci`, `refactor`, `chore`. Areas: `generator`, `load`, `fx`, `cli`, `dbt`, `dag`, `docker`, `scripts`, `tests`, `docs`, `adr`, `ci`, `repo`.
 - Body: why, in one to three short lines.
-- Last line `written with AI, reviewed`, only when an agent drafted part of the change and you reviewed it.
+- Last line `written with AI`, only when an agent drafted part of the change and you reviewed it.
 - At least one commit per step, never squashed: the order of commits is evidence. Push at the end of every milestone; the pre-push hook runs on every push. Never amend, rebase or force-push a commit that is already pushed.
 
 ### Failure log
@@ -427,7 +429,7 @@ Sunday 10:00-10:30, 0.5 h. **Done when:** the first commits hold only `.gitignor
      git ls-files | grep -n -i -E -f "$TMPDIR/lvs_words.re"; echo "exit=$?"
      rm "$TMPDIR/lvs_words.re"
      ```
-  7. `git commit -m "docs(repo): add the planning documents (S0.3)" -m "Drafted with AI assistance before the build and reviewed by me." -m "written with AI, reviewed"`
+  7. `git commit -m "docs(repo): add the planning documents (S0.3)" -m "Drafted with AI assistance before the build and reviewed by me." -m "written with AI"`
   8. `gh auth status` (log in with `gh auth login` if needed), then `gh repo create ledger-vs-statement --private --source=. --remote=origin --push`. The hook runs on this first push.
   9. Add one row to the table in `~/Developer/learning/projects/README.md` (Folder `~/Developer/ledger-vs-statement/` (own repo), Plan weeks `1-2 Nov 2026, side project`, What `Two Ledgers: daily revenue vs settlement-statement reconciliation per merchant account on the BigQuery sandbox, with Airflow 3 and dbt; synthetic payments, real NBK FX`, Status `In progress`). That folder is its own git repo: `git -C ~/Developer/learning add projects/README.md && git -C ~/Developer/learning commit -m "projects: add ledger-vs-statement"`.
 - **You write:** your version of `docs/design.md`, any change to the defect catalog, the portfolio row. **Agent may scaffold:** the LICENSE text.
@@ -514,7 +516,7 @@ Sunday 10:30-12:00, 1.5 h. **Done when:** the probe table is filled, the write p
   - With usage stats on, the first dbt command writes a user-id file, `.user.yml`, into the profiles folder, which here is `dbt/`. The `flags:` block stops that from the first `dbt debug`, and `.gitignore` ignores `dbt/.user.yml` in case it ever appears.
   - The first `uv add` downloads the parser's native wheel from github.com, so it needs the network.
   - Both targets set `maximum_bytes_billed: 1000000000`. Do not drop it.
-- **Commit:** `build(repo): add the uv project with pinned dbt and the profile (S1.3)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `build(repo): add the uv project with pinned dbt and the profile (S1.3)`, ending with the line `written with AI`.
 - **Failure log:** any `dbt debug` error with its fix.
 
 ### S1.4 Run the G0 probes
@@ -538,7 +540,7 @@ Sunday 10:30-12:00, 1.5 h. **Done when:** the probe table is filled, the write p
   - "Yesterday" in the probes is the UTC date.
   - BigQuery error messages contain the request URL, and the URL contains your project id.
   - P3 must show 1 row for yesterday (the second file replaced the first) and the other day untouched.
-- **Commit:** `test(scripts): add the G0 sandbox capability probes (S1.4)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `test(scripts): add the G0 sandbox capability probes (S1.4)`, ending with the line `written with AI`.
 - **Failure log:** every FAIL is a finding. Log it with the exact message.
 
 ### S1.5 Choose the write path and the auth method; record G0
@@ -588,7 +590,7 @@ Sunday 12:45-14:15, 1.5 h. **Done when (gate G-skel):** `smoke_bigquery` is gree
   - Expect several hundred MB more than the base image.
   - Never install anything into Airflow's own environment. Never copy the key into the image.
   - Do not set `AIRFLOW_IMAGE_NAME` in your shell; compose would use it instead of this image.
-- **Commit:** `build(docker): give dbt its own venv in the Airflow image (S2.1)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `build(docker): give dbt its own venv in the Airflow image (S2.1)`, ending with the line `written with AI`.
 - **Failure log:** a failed build (network, disk space) with its fix.
 
 ### S2.2 `docker-compose.yaml` from your course file
@@ -612,7 +614,7 @@ Sunday 12:45-14:15, 1.5 h. **Done when (gate G-skel):** `smoke_bigquery` is gree
   - The environment goes into `x-airflow-common`, so the scheduler, the dag-processor and the triggerer all see it.
   - The pool line goes after `airflow config list` in `airflow-init`; the metadata database exists by then.
   - `docker compose config` prints your project id. Do not paste its output anywhere public.
-- **Commit:** `build(docker): add docker-compose from the course file (S2.2)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `build(docker): add docker-compose from the course file (S2.2)`, ending with the line `written with AI`.
 - **Failure log:** any compose error that took more than a few minutes.
 
 ### S2.3 The raw schema contract, the BigQuery helper, `ensure_tables`, `make bq-setup`
@@ -649,7 +651,7 @@ Sunday 12:45-14:15, 1.5 h. **Done when (gate G-skel):** `smoke_bigquery` is gree
   - Leave `partition_expiration_days` alone; the sandbox default of 60 days stays.
   - The `fx_rates` table is labelled `real` and its description starts with "REAL: NBK rates via Frankfurter v2".
   - Location `US` everywhere. Set the client's project explicitly.
-- **Commit:** `feat(load): add the raw schema contract and ensure_tables (S2.3)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(load): add the raw schema contract and ensure_tables (S2.3)`, ending with the line `written with AI`.
 - **Failure log:** a schema mismatch found here is cheap. Log it if it came from a real misunderstanding.
 
 ### S2.4 `dags/smoke_bigquery.py`
@@ -694,7 +696,7 @@ Sunday 12:45-14:15, 1.5 h. **Done when (gate G-skel):** `smoke_bigquery` is gree
   - A permission error on the key means `AIRFLOW_UID` does not match the owner of `keys/sa.json`.
   - If the course stack is still running, the two stacks compete for Docker memory. Stop it first.
   - After a change to `Dockerfile` or `docker/requirements-dbt.txt`: `docker compose build && make up`.
-- **Commit:** `build(repo): add the up, down and smoke targets (S2.5)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `build(repo): add the up, down and smoke targets (S2.5)`, ending with the line `written with AI`.
 - **Failure log:** every plumbing bug here is a real entry, about 5 minutes each.
 
 ### Explain check M2
@@ -723,7 +725,7 @@ Sunday 14:15-16:30, 2.25 h. **Done when:** pytest is green, and `make day DATE=2
 - **Files:** `dbt/seeds/mids.csv`, `src/recon/world.toml`, `src/recon/config.py`.
 - **Done when:** in `PYTHONPATH=src uv run python` (with the dev shell open), loading the config shows `mid_usd_01` and `mid_kzt_01` with their fee terms and offsets, the seed `20261101` and the world start `2026-10-04`.
 - **Traps:** every value is an integer or a string, as in the data spec: plan weights in percent (`weight_pct = [30, 50, 20]`), rates in basis points (`*_bp`), delays in seconds (`*_delay_s`). Fees and tolerances live in `mids.csv`, also as integers. Read the seed the same way everywhere, because it becomes part of every random-stream key.
-- **Commit:** `feat(generator): add world parameters and contract terms (S3.1)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(generator): add world parameters and contract terms (S3.1)`, ending with the line `written with AI`.
 - **Failure log:** a value you had to change because the spec and the TOML disagreed.
 
 ### S3.2 `payments_for_day`
@@ -766,7 +768,7 @@ Sunday 14:15-16:30, 2.25 h. **Done when:** pytest is green, and `make day DATE=2
 - **Files:** `src/recon/generator.py`.
 - **Done when:** running `emit` twice for one date leaves the same sha256 for every file, and the files sit at the landing paths from the spec.
 - **Traps:** a capture at 23:59:50 UTC is delivered the next day. Redeliveries up to 6 hours later cross midnight. A USD accounting date can be one day before the world start. The answer key goes to `landing/_truth/`, which is gitignored and never loaded.
-- **Commit:** `feat(generator): emit arrival-day files and the answer key (S3.3)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(generator): emit arrival-day files and the answer key (S3.3)`, ending with the line `written with AI`.
 - **Failure log:** an off-by-one-day bug in arrival selection is the classic one. Log it if it happens.
 
 ### S3.4 Generator tests
@@ -783,7 +785,7 @@ Sunday 14:15-16:30, 2.25 h. **Done when:** pytest is green, and `make day DATE=2
 - **Files:** `tests/test_generator.py`, `pyproject.toml` (only if the pytest settings change), `Makefile`.
 - **Done when:** `make test` ends with `passed` and no failures. `make check` exits 0.
 - **Traps:** compute the golden hash only when the generator is final for M3. Before G1 you may update it on purpose (say why in the commit). After G1, only together with a `generator_version` bump (as in U6 and U7), with the reason in the commit. Set the class bounds with the rule under "Generator tests" in `docs/specs/data_and_generator.md`: each count lies between 0.25 and 3 times its expected value, and the expected value is the rate times the real base count. For example D3 is 0.4% of payments: about 1,400 payments over 7 days give an expected 5.6, so the bounds are about 1.4 to 16.8. D1 at 4% of events gets much higher bounds. If a bound fails for the pinned seed, widen it and log why; never change the seed to make a test pass. The generator is deterministic, so a bound either always passes or always fails: it never flickers.
-- **Commit:** `test(generator): add determinism and golden-hash tests (S3.4)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `test(generator): add determinism and golden-hash tests (S3.4)`, ending with the line `written with AI`.
 - **Failure log:** a test that found a real generator bug is a good entry.
 
 ### S3.5 `make day` twice: the same bytes
@@ -806,7 +808,7 @@ Sunday 14:15-16:30, 2.25 h. **Done when:** pytest is green, and `make day DATE=2
 - **Files:** `src/recon/cli.py`, `Makefile`.
 - **Done when:** `IDENTICAL` is printed, and `git status --short` shows no files under `landing/` (they are gitignored).
 - **Traps:** the host writes the same `landing/` folder that the containers mount. That is safe only because the files are identical for the same inputs.
-- **Commit:** `feat(cli): add make day for one generated day (S3.5)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(cli): add make day for one generated day (S3.5)`, ending with the line `written with AI`.
 - **Failure log:** if the hashes differ, that is a real bug: log the cause.
 
 ### Explain check M3
@@ -854,7 +856,7 @@ Sunday 16:45-17:30, 0.75 h. **Done when:** 7 development days are in `raw_dev`, 
   - `CREATE_NEVER` means a load never creates a table. A missing table fails the job loudly, instead of appearing without its partitions (see "Load protocol").
   - Never `insert_all` or `insert_rows_json` (streaming), never GCS, never any INSERT, UPDATE, DELETE or MERGE.
   - `ndjson_bytes` is a binary file object (for example `io.BytesIO`), opened at position 0.
-- **Commit:** `feat(load): one WRITE_TRUNCATE load job per table and day (S4.1)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(load): one WRITE_TRUNCATE load job per table and day (S4.1)`, ending with the line `written with AI`.
 - **Failure log:** a partition mismatch or a row-count mismatch, with the cause.
 
 ### S4.2 `recon.fx.fetch_nbk`
@@ -872,7 +874,7 @@ Sunday 16:45-17:30, 0.75 h. **Done when:** 7 development days are in `raw_dev`, 
 - **Files:** `src/recon/fx.py`.
 - **Done when:** the first call for a date writes the two files. The second call for the same date makes no HTTP request and logs "already landed".
 - **Traps:** when R-6 has no rate (R is a Friday or a Saturday, or R-6 is a holiday), the answer starts with the last published row before R-6. The check allows exactly that one earlier row. Test with R = 2026-10-31: the answer starts with 2026-10-23. Seven days always contain weekdays, which is why the window is R-6 to R. Always pass `base` and `quotes`. Never use blended rates. Never parse a rate as a float.
-- **Commit:** `feat(fx): fetch NBK rates once into immutable landing (S4.2)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(fx): fetch NBK rates once into immutable landing (S4.2)`, ending with the line `written with AI`.
 - **Failure log:** an HTTP or parsing surprise from the real API is a good entry.
 
 ### S4.3 The host CLI for full development days
@@ -898,7 +900,7 @@ Sunday 16:45-17:30, 0.75 h. **Done when:** 7 development days are in `raw_dev`, 
 - **Files:** `src/recon/cli.py`, `Makefile`, `landing/fx/provider=nbk/*.json` (committed).
 - **Done when:** each raw table in `raw_dev` has 7 partitions. The query returns the same two rows before and after the reload. `git ls-files landing/fx | head` lists the committed FX files. `git check-ignore landing/payment_events` prints the path.
 - **Traps:** the CLI calls `check_run_date` before it generates or loads a day, so a day older than 45 days, or on or after today (UTC), is refused on the host too. (In M3, `make day` only generated files and had no guard yet.) Landed FX files are committed and immutable: never edit or refetch them.
-- **Commit:** `feat(cli): load full development days into raw_dev (S4.3)`, ending with the line `written with AI, reviewed`. Then the FX commit in sub-step 5.
+- **Commit:** `feat(cli): load full development days into raw_dev (S4.3)`, ending with the line `written with AI`. Then the FX commit in sub-step 5.
 - **Failure log:** anything that differed between the two queries.
 
 ### Explain check M4
@@ -932,7 +934,7 @@ Every SQL model and test in this milestone is yours. The shapes, columns, grains
   - If BigQuery rejects a job label on the first build, remove `job-label` and log it.
   - The source schema is `{{ env_var('RAW_DATASET', 'raw') }}`; the dev shell and the Makefile set `raw_dev`.
   - No custom schemas, so no `generate_schema_name` override. `dbt/dbt_packages/` is gitignored; the containers see it through the `./dbt` mount.
-- **Commit:** `feat(dbt): add project config, typed seeds and sources (S5.1)`. Add the line `written with AI, reviewed` if an agent drafted the column lists.
+- **Commit:** `feat(dbt): add project config, typed seeds and sources (S5.1)`. Add the line `written with AI` if an agent drafted the column lists.
 - **Failure log:** a seed type or YAML error that took more than a few minutes.
 
 ### S5.2 The four staging models and their generic tests
@@ -1207,13 +1209,13 @@ Monday 08:00-09:15, 1.25 h. **Done when:** all tests are green on the host and i
                - type: not_null
      ```
   3. `make dbt-build`
-  4. Commit the contract now, before you break it on purpose: `git add dbt/models/marts/_marts.yml && git commit -m "feat(dbt): enforce the fct_recon_daily contract (S7.3)" -m "written with AI, reviewed"`.
+  4. Commit the contract now, before you break it on purpose: `git add dbt/models/marts/_marts.yml && git commit -m "feat(dbt): enforce the fct_recon_daily contract (S7.3)" -m "written with AI"`.
   5. Prove the contract can fail: change one `data_type` (for example `unexplained_minor` to `string`), run `make dbt-build`, see the contract error, then undo only that file with `git restore dbt/models/marts/_marts.yml` (or edit the one line back).
 - **You write:** the check of every type, and the failure test. **Agent may scaffold:** the column list.
 - **Files:** `dbt/models/marts/_marts.yml`.
 - **Done when:** `make dbt-build` ends with `ERROR=0` with the contract, you saw the deliberate type change fail, and after the undo `git status --short dbt/` prints nothing.
 - **Traps:** `NUMERIC` is not `BIGNUMERIC`. Counts are `INT64`. A contract compiles into `create or replace table ... (columns) as select ...`: still DDL, still no DML. Never run `git restore dbt/` while work is uncommitted: it throws away every uncommitted change under `dbt/`, including a contract you have not committed yet.
-- **Commit:** `feat(dbt): enforce the fct_recon_daily contract (S7.3)`, ending with the line `written with AI, reviewed`, made in sub-step 4, before the failure test.
+- **Commit:** `feat(dbt): enforce the fct_recon_daily contract (S7.3)`, ending with the line `written with AI`, made in sub-step 4, before the failure test.
 - **Failure log:** a type mismatch the contract caught.
 
 ### S7.4 The completeness error test and the two warning gates
@@ -1301,7 +1303,7 @@ Monday 09:15-10:00, 0.75 h. **Done when:** `compare.json` shows every group iden
   - The JSON never contains the project id.
   - The script reads `raw` and `analytics` by default, even though the Makefile sets `RAW_DATASET=raw_dev` for development commands.
   - Test snapshots go to `$TMPDIR`, never into `docs/evidence/`.
-- **Commit:** `feat(scripts): add the fingerprint snapshot and compare (S8.1)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(scripts): add the fingerprint snapshot and compare (S8.1)`, ending with the line `written with AI`.
 - **Failure log:** a fingerprint that differed for a reason you did not expect.
 
 ### S8.2 Run the proof
@@ -1375,7 +1377,7 @@ If the G1 host-run fallback was used, N1 says "re-ran [D] days from the command 
 - **Files:** `scripts/results.py`, `scripts/storage.py`, `Makefile`, `docs/evidence/2026-11-02/summary.json`, `docs/evidence/2026-11-02/storage.json`.
 - **Done when:** both targets exit 0. `python3 -m json.tool docs/evidence/2026-11-02/summary.json` shows the N1 and N2 values, the seed, the world start, the window, `as_of` and the git SHA. In the dev shell, `grep -c "$GCP_PROJECT" docs/evidence/2026-11-02/*.json` prints `0` for every file.
 - **Traps:** the mutation clause of N2 is used only because S7.5 ran. Bytes are never a headline number: at this size the 10 MB minimum per query dominates.
-- **Commit:** `feat(scripts): write summary.json and storage.json (S9.1)`, ending with the line `written with AI, reviewed`. Then `docs(docs): add the results of 2026-11-02 (S9.1)`.
+- **Commit:** `feat(scripts): write summary.json and storage.json (S9.1)`, ending with the line `written with AI`. Then `docs(docs): add the results of 2026-11-02 (S9.1)`.
 - **Failure log:** a number that did not match what you expected, and why.
 
 ### S9.2 `scripts/fx_report.py` (N3; cut-order item 1)
@@ -1761,7 +1763,7 @@ The upgrades come in a fixed order, 8.75 hours in total. Each ends with a tag, f
 - **Files:** `scripts/eval.py`, `Makefile`, `docs/evidence/<date>/eval.json`, `README.md`.
 - **Done when:** `make eval` exits 0, and `eval.json` holds raw counts per cause and the number of benign final lines.
 - **Traps:** never "accuracy", "precision", "recall" or "detection rate" as a headline. Benign spikes flagged as fee mismatches are false alarms; D5 overcharges within tolerance are misses; both are by design. Score only final lines. Never load the truth into BigQuery.
-- **Commit:** `feat(scripts): add the seeded self-test (S11.4)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `feat(scripts): add the seeded self-test (S11.4)`, ending with the line `written with AI`.
 - **Failure log:** a scoring surprise, with its cause.
 
 ### S11.5 ADR-0004 to 0007 accepted
@@ -1795,7 +1797,7 @@ The upgrades come in a fixed order, 8.75 hours in total. Each ends with a tag, f
 - **Files:** `.github/workflows/ci.yml`.
 - **Done when:** the workflow is green on your branch.
 - **Traps:** no secrets and no BigQuery in CI. dbt unit tests need a warehouse, so they never run in CI. Actions are free for public repos.
-- **Commit:** `ci(ci): add lint and tests (S12.1)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `ci(ci): add lint and tests (S12.1)`, ending with the line `written with AI`.
 - **Failure log:** a CI-only failure, with its cause.
 
 ### S12.2 The DAG import test, the loader test and the truth-isolation test
@@ -1919,7 +1921,7 @@ The upgrades come in a fixed order, 8.75 hours in total. Each ends with a tag, f
 - **Files:** `Makefile`, `docs/adr/0009-window-and-expiry.md`, `docs/adr/README.md`; the tag `v1.3`.
 - **Done when:** `make no-dml` reports 0 matches and exits 0.
 - **Traps:** grep the compiled SQL, not your own docs, which mention these words.
-- **Commit:** `build(repo): add the no-DML check (S13.5)`, ending with the line `written with AI, reviewed`.
+- **Commit:** `build(repo): add the no-DML check (S13.5)`, ending with the line `written with AI`.
 - **Failure log:** any match, with its cause.
 
 ---

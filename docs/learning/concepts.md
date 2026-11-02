@@ -71,7 +71,7 @@ These come from my learning plan:
 7. **AI may write boilerplate.** I own the design, the data model and every decision, and the README says so.
 
 Project rules on top of these:
-- A step marked "you write" in `docs/build_plan.md` is mine. A step marked "agent may scaffold" allows an AI draft of boilerplate. I annotate the draft, simplify it if it is longer than 60 lines, explain it back in 2 minutes, and commit it with "written with AI, reviewed" in the message.
+- A step marked "you write" in `docs/build_plan.md` is mine. A step marked "agent may scaffold" allows an AI draft of boilerplate. I annotate the draft, simplify it if it is longer than 60 lines, explain it back in 2 minutes, and commit it with "written with AI" in the message.
 - Plumbing blockers (Dockerfile, compose, IAM) get about 15 minutes before I ask for help.
 - A real bug gets an entry in `docs/failure_log.md` when it happens, about 5 minutes each.
 

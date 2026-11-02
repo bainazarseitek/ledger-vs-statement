@@ -548,11 +548,11 @@ Later: v1.x (a Postgres source extracted on a watermark, refunds and chargebacks
 ## How I used AI
 
 <!--
-FILL: Write this section yourself, in the first person, in your own words. Keep it true: leave out anything below that did not happen, and add anything that did. Points the plan expects, if they stayed true:
+FILL: Keep this section true and in the first person: leave out anything below that did not happen, and add anything that did. Points the plan expects, if they stayed true:
 1. The planning documents (docs/design.md, docs/build_plan.md, docs/specs/, docs/learning/concepts.md, docs/roadmap.md and the ADR drafts) were drafted with an AI assistant before the build and reviewed by you. Each starts with a line saying so. An ADR is marked Accepted only after you rewrote it in your own words.
 2. This README started from a skeleton drafted with AI: the headings, tables, command lists and fact lists. Say which parts you rewrote, and that you checked every row against the code. You wrote the prose.
-3. Code an AI agent wrote and you reviewed: the boilerplate (Dockerfile, compose edits, Makefile, .gitignore, YAML column lists, argparse and IO wrappers, scripts/g0_probe.py, the schema JSON, later the CI YAML) and any core logic you asked it to write. Name the core parts. The agent explained each piece before writing it and walked you through every line after. Those commits say "written with AI, reviewed", so `git log --grep "written with AI"` lists them.
-4. What you wrote yourself: list only the parts you actually wrote.
+3. An AI coding agent built the code and drafted the docs by following the plan step by step (AGENTS.md, "Build mode"). Every commit it made says "written with AI", so `git log --grep "written with AI"` lists them, and docs/build_journal.md records every step.
+4. What the owner did: chose the problem and the constraints, reviewed the plan, did the Google Cloud setup, reviewed the result and studied every file (docs/walkthrough.md). Add anything he changed himself.
 5. How you verified: pytest and dbt tests, the G0 probes, the mutation check (docs/testing.md), the rerun proof, and an explain-any-file drill without notes.
 6. One honest example of something AI got wrong and how you caught it, if it happened. Link the failure-log entry.
 7. The rules AI agents follow in this repo are in AGENTS.md.

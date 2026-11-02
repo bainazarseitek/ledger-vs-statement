@@ -4,29 +4,29 @@ Rules for AI agents working in this repository. Drafted with AI assistance befor
 
 ## What this project is
 
-Two Ledgers (`ledger-vs-statement`) is a learning project that answers one question every day: does yesterday's revenue match what the payment service provider (PSP) settled, per merchant account (MID)? An Airflow 3 pipeline generates a synthetic subscription business's payment webhooks and per-MID settlement statements, fetches real National Bank of Kazakhstan (NBK) USD/KZT rates through Frankfurter, and loads all three into the BigQuery sandbox, which has no billing and so allows no DML. dbt then deduplicates the webhooks, matches every payment across the two ledgers, gives each line one status and dated reason codes, and proves with error-level tests that every MID-day's gap is explained to the minor unit. The owner is learning BigQuery, dbt and Airflow 3 through this project. You may write any code he asks for, but your main job is that he understands every line: explain before you write, and walk him through it after.
+Two Ledgers (`ledger-vs-statement`) is a learning project that answers one question every day: does yesterday's revenue match what the payment service provider (PSP) settled, per merchant account (MID)? An Airflow 3 pipeline generates a synthetic subscription business's payment webhooks and per-MID settlement statements, fetches real National Bank of Kazakhstan (NBK) USD/KZT rates through Frankfurter, and loads all three into the BigQuery sandbox, which has no billing and so allows no DML. dbt then deduplicates the webhooks, matches every payment across the two ledgers, gives each line one status and dated reason codes, and proves with error-level tests that every MID-day's gap is explained to the minor unit. The project runs in build mode: you build it end to end by following `docs/build_plan.md`, and you record every step so that the owner can study the finished work and explain it in an interview ("Build mode").
 
 ## The rules in short
 
 Read the whole file. If you remember nothing else, remember these:
 
-1. Explain first, then walk through. The agent may write any code the owner asks for, including core logic, as long as it first explains exactly what it will write and why, and afterwards walks the owner through every line. ("Who writes what").
+1. Build mode. Follow `docs/build_plan.md` step by step to the end of M10 and write the code yourself, core logic included. Record every step in `docs/build_journal.md` ("Build mode").
 2. Never run bare `dbt`. On the host use a `make` target or `uv run dbt`. In the container use `/opt/airflow/dbt_venv/bin/dbt`.
 3. No DML. Never write or run `INSERT`, `UPDATE`, `DELETE` or `MERGE`, or any config that runs them for you. The one exception is probe P2, which must be refused ("Sandbox: no DML").
 4. Never open, print, copy or commit anything in `keys/` or `.env`.
-5. No result number unless the owner's own run produced it. Synthetic data stays labelled synthetic.
+5. No result number unless a real run of this repo produced it and it is saved in `docs/evidence/`. Synthetic data stays labelled synthetic.
 6. Never write a word from the private banned-word list, and ask before writing any real name the specs do not already use ("Names").
 7. No em dashes anywhere.
-8. Never run an Owner command ("Commands"): show it and let the owner run it in his own terminal.
+8. Never do an owner-only action ("Build mode"): tell him exactly what to do and wait.
 9. When unsure, stop and ask. Never work around a guard, a test or a hook.
 
 ## Start of every session
 
 1. If the repo has no `docs/build_plan.md` yet (before step S0.3), read this file and the plan from the planning pack at `~/Developer/ledger-vs-statement-plan/`. Open only the files the owner names there and the files listed in S0.3 sub-step 5; every other file in that folder is private. Before S1.3 there is no `Makefile`, so skip every `make` command.
 2. Read this file fully.
-3. Find the step id the owner is working on. He names it, or you ask ("How to use the step ids").
+3. Read `docs/build_journal.md` (from S0.3 on). Its last entry names the last finished step and the next one.
 4. Run `git status` and `git log --oneline -15` to see where the work stands.
-5. Choose the mode: "Tutor mode" (the default) or "Coding-agent mode" (when he asks you to write code).
+5. Continue with the next step ("Build mode"). If the owner named a step, start there.
 
 ## Where things are
 
@@ -58,6 +58,8 @@ Documents:
 | `docs/adr/README.md`, `docs/adr/NNNN-*.md` | decision records |
 | `docs/roadmap.md` | what comes after v1.0 |
 | `docs/failure_log.md` | real bugs only |
+| `docs/build_journal.md` | one entry per step: what was built, how it works, commands and output, interview questions ("Build mode") |
+| `docs/walkthrough.md` | the owner's study guide, written after S10.3 ("Build mode") |
 | `docs/testing.md` | the mutation-check record |
 | `docs/evidence/<date>/` | measured numbers, written only by `make` targets |
 
@@ -68,79 +70,73 @@ Which source wins:
 3. For what to build next, follow `docs/build_plan.md` and the spec it points to.
 4. If a spec and the code disagree, do not edit either to match. Tell the owner the file and the line, and let him decide.
 
-## Who writes what
+## Build mode
 
-### The rule
+### The decision (owner, 2026-11-02)
 
-The agent may write any code the owner asks for, including core logic, as long as it first explains exactly what it will write and why, and afterwards walks the owner through every line.
+The owner does not have the time to write the code himself. You build the whole floor, M0 to M10, by following `docs/build_plan.md` step by step. He studies the finished work afterwards from `docs/build_journal.md` and `docs/walkthrough.md`, so every step must leave a clear written record.
 
-1. Write nothing until he asks. Tutor mode is the default; use coding-agent mode only when he asks you to write code.
-2. Before you write: name the files and functions, the step id, what the code will do, why this approach (quote the spec text it follows), and the checks you will run. Wait for his go-ahead.
-3. After you write: walk him through every line in plain words, one block at a time. Then ask him to explain the key parts back. If he cannot, explain again or simplify before he commits.
-4. He owns the design, the data model and every decision, and he must be able to explain every line he commits, whoever wrote it.
-5. Keep attribution honest: a commit with agent-written code ends with `written with AI, reviewed`, and the README section "How I used AI" says which parts an agent wrote, core logic included.
-6. Where a spec or a step says "you write", read it as core logic under this rule: he writes it himself or asks you to.
+This section overrides every conflicting line in this file and in the plan. Wherever a step says "You write", "you run", "your words" or names the owner, you do it, except the owner-only actions below. The clock, the time boxes and the slip rule do not apply: build the full floor, N3 included, and use the cut order only when a gate's fallback requires it. The upgrades M11 to M17 are out of scope unless he asks.
 
-### The owner's learning rules
+### Owner-only actions
 
-1. Try first, when he chooses to write a piece himself: 20 to 30 minutes alone on logic before you give more than a hint, about 15 minutes for a plumbing blocker (Dockerfile, compose, IAM).
-2. "Why", not only "what": answer follow-up questions until he can explain the code himself.
-3. Debug together: when he shares an error, ask what he thinks it means and what he checked, then explain.
-4. AI as examiner: quiz him at the end of each milestone. If he asks for a summary of a document, offer to quiz him after he has read it.
-5. Speed is not the test. The test is whether he can explain the work in about 2 minutes and rebuild it without help.
+For these, stop, tell him exactly what to do (the step's sub-steps, click by click), and wait until he says it is done:
 
-### Core logic (extra care when you write it)
+1. S0.1 sub-steps 1 to 3 (he does them before the first session).
+2. S0.2 sub-step 2: writing `~/.config/lvs/banned_words.txt`. Never read that file and never ask what is on it; the hook and the checks read it.
+3. S1.1 and S1.2: everything in the Google Cloud console, the key download, and moving the key to `keys/sa.json` with `chmod 600`. Also the ADC login, if the ADC fallback is used.
+4. Any sign-up, billing step, IAM or console change, or account change (Plan B included).
+5. Making the GitHub repo public, its description and topics (S10.4), and any change of visibility.
+6. Deleting or rotating a key after a leak.
 
-These hold the project's ideas. He may write them himself (tutor mode) or ask you to. When you write one, explain the approach before any code, deliver it in small parts, and walk through every line.
+### How you build each step
 
-1. `src/recon/generator.py`, except the atomic-write helper: random streams, plans, times, ids, the defect classes (D1 to D6, H1 to H4), the benign behaviours (B1 to B3), arrivals, the answer key, `draw_int` and `draw_weighted`.
-2. Every value and every comment in `src/recon/world.toml`.
-3. `ensure_tables`, `load_partition`, `load_day` and `check_run_date` in `src/recon/load.py`, and `fetch_nbk` in `src/recon/fx.py`.
-4. Everything under `dags/`.
-5. Every SQL file under `dbt/` (models, singular tests, the macro, analyses), the seed CSV files, the full `dbt/dbt_project.yml` and `dbt/packages.yml` (S5.1), the unit tests UT1 to UT4, and the descriptions and tests in the dbt YAML files.
-6. The SQL and the logic in `scripts/`, except `scripts/g0_probe.py` (see the scaffold table): the fingerprint SQL and the comparison, the results queries, the FX comparison, the self-test scoring.
-7. Every assertion in `tests/`.
-8. Prose, not code, so he writes it himself: every sentence of `README.md`, `docs/design.md` in his own words, ADRs in his own words, the results in `docs/testing.md`, and the root cause and fix of every failure-log entry.
+1. Read the step in `docs/build_plan.md` and the spec section it points to. Check that the earlier steps are done (journal and commits).
+2. Write the code, core logic included: the simplest version that meets the spec, with names, versions, paths and flags exactly as in the specs. Where a step says a document is written "in your words" (design doc, ADRs, README, failure-log entries), you draft it, plainly and truthfully.
+3. Run the step's **Done when** checks yourself and keep the real output. Where a check says "in the console", run the same SQL through the Python client in `src/recon/bq.py` (it sets `maximum_bytes_billed`) or with `uv run dbt show`. Write the project id as `<project>` in anything you save.
+4. Review your diff against the review checklist in "Explaining".
+5. Commit the step ("Commit style"), then append its entry to `docs/build_journal.md` and commit that too.
+6. Go on to the next step. Do not wait for the owner unless the step is owner-only or a "Stop and ask" case applies.
 
-### Boilerplate by step
+### The build journal: `docs/build_journal.md`
 
-You may draft these when he asks, under the same rule. Where the right-hand column says he writes something, that part is core logic: see above.
+Create it in S0.3. Add one entry per step, right after the step's commit. It is how the owner will learn the project, so write for a reader who knows Python and SQL but has not seen this code. Each entry has:
 
-| Step | File or part | Boilerplate you may draft | What he checks, runs or decides |
-|---|---|---|---|
-| S0.1 | `.gitignore` | the file, from the text in the specs | checks `git check-ignore keys/sa.json .env` |
-| S0.3 | `LICENSE` | the MIT text, with the copyright line given in that step | checks the year and his name |
-| S1.3 | `dbt/profiles.yml`, a minimal `dbt/dbt_project.yml`, tool settings in `pyproject.toml` (pytest `pythonpath`, ruff) | the YAML and the TOML blocks | runs every `uv` command himself, then `uv run dbt debug` |
-| S1.3 | `.env.example` | the four lines from "Environment variables" in `docs/specs/airflow_and_docker.md`, with a placeholder project id | copies it to `.env` and fills in his real values himself |
-| S1.4 | `scripts/g0_probe.py` | the probes, one at a time | reads every line and runs it |
-| S2.1 | `Dockerfile`, `docker/requirements-dbt.txt`, `.dockerignore` | all three | starts the image build |
-| S2.2 | `docker-compose.yaml` (he copies the base file) | each listed change, one at a time | checks each change, runs `docker compose config --quiet` |
-| S2.3 | `src/recon/schemas/*.json`, `src/recon/bq.py` | the schema JSON from the raw-table spec; the host client and query helper | writes `ensure_tables` |
-| S2.3 | `src/recon/__init__.py`, the `src/recon/cli.py` skeleton | the package file (it can stay empty); the `argparse` skeleton with one subcommand, `bq-setup`, that calls his `ensure_tables` for `raw` and `raw_dev` | checks that `bq-setup` calls only `ensure_tables`, then runs `make bq-setup` twice |
-| S3.1 | `src/recon/config.py` | loading env vars, `world.toml` and `dbt/seeds/mids.csv` into frozen dataclasses | sets every value and comment in `world.toml` |
-| S3.3 | atomic writes in `src/recon/generator.py` | the write-to-temp-then-rename helper | writes the selection logic in `arrivals` and `emit` |
-| S3.4, S12.2 | `tests/test_generator.py`, `tests/test_load.py`, `tests/test_dag.py` | the harness: imports, fixtures, temp folders, a fake BigQuery client | writes every assertion |
-| S3.5 | the `generate --date` subcommand in `src/recon/cli.py` | the `argparse` code | decides what it calls, then runs `make day` twice and compares the sha256 |
-| S4.1 | `src/recon/load.py` | the `LoadJobConfig` block | writes `load_partition`, `load_day` and `check_run_date` |
-| S4.2 | `src/recon/fx.py` | the `urllib` request, timeout and User-Agent code | writes `fetch_nbk` |
-| S4.3 | `src/recon/cli.py` | the `argparse` wrapper | decides what each command calls |
-| S5.1, S7.3 | dbt YAML files | column lists for sources, seeds and models; the contract column list | writes descriptions, tests and all SQL |
-| S8.1 | `scripts/prove_idempotency.py` | `argparse` and JSON input and output | writes the fingerprint SQL and the comparison |
-| S9.1 | `scripts/results.py`, `scripts/storage.py` | file input and output | writes the queries |
-| S9.2 | `scripts/fx_report.py` | the fetch and the XML parsing | writes the comparison |
-| S11.4 | `scripts/eval.py` | file input and output | writes the scoring |
-| S12.1 | `.github/workflows/ci.yml` | the workflow YAML | reviews every step of it |
-| S13.5 | the `make no-dml` recipe | the grep | edits ADR-0009 |
-| any | `Makefile` | recipes for the target names in "Commands" | checks each recipe |
+1. the step id, the date and the commit hash;
+2. what was built: the files and functions;
+3. how it works: the logic in plain words, the key lines quoted with file and line number, and why this approach (the spec section or ADR it follows, and the alternative it rejects);
+4. the commands you ran and their real output, shortened, with secrets and the project id removed;
+5. what went wrong and how it was fixed, with a link to the failure-log entry;
+6. one or two questions an interviewer could ask about this step, each with a short answer.
 
-### Rules for every piece of code you write
+The journal's last entry always names the next step, so a new session can pick up from it.
 
-1. Only after the owner asks for it, and only after you have explained what and why and he has agreed.
-2. At most 60 lines per delivery. If a file needs more, deliver it in parts of at most 60 lines, one function or block at a time, each explained before and walked through after. `scripts/g0_probe.py` is the one file that stays longer than 60 lines; deliver it in parts.
-3. The simplest version that works: no options, features or abstractions the step does not need. Code in `src/recon/` uses only the standard library, plus `google-cloud-bigquery` where the spec uses it.
-4. Names, versions, paths and flags exactly as in the specs.
-5. Walk him through every line. After he has read and annotated it, ask him to explain it back in about 2 minutes. If he cannot, simplify it or explain again before he commits it.
-6. The commit message carries the line `written with AI, reviewed` ("Commit style").
+### The walkthrough: `docs/walkthrough.md`
+
+Write it after S10.3, from the code and the journal. It is the owner's study guide:
+
+1. The problem and the results on one page: N1, N2 and N3, copied from `docs/evidence/`.
+2. The architecture: the data flow from the generator to the marts, with a Mermaid diagram.
+3. File by file, in the order the data flows: what each file does, and a walk through its important lines.
+4. Every design decision with its alternative, linked to its ADR.
+5. The concepts the build uses (partitions and partition decorators, WRITE_TRUNCATE loads, idempotency, data intervals and backfills, dedup with `QUALIFY`, the FULL OUTER JOIN matcher, integer money, FX carry-forward, dbt tests, unit tests and contracts), each tied to the file that uses it.
+6. How it was built: the milestones in order, the real bugs from the failure log, what was cut and why.
+7. How to run it from a clean clone, and how to rerun the proof.
+8. A drill: 20 questions about this repo with model answers, and five "explain this file without notes" exercises.
+
+Like every repo file, it names no company and no employer.
+
+### After the build
+
+The owner reads the walkthrough, explains each file without notes, and reruns the proof himself. When he asks about any part, use "Explaining".
+
+## Known traps from the plan review (2026-11-01)
+
+1. S2.1: the image build prints a "dbt v2 is available" banner and pip notices; ignore them. The image needs about 1.1 GB more disk than the spec says.
+2. S1.3: with a missing key, `dbt debug` fails with "'NoneType' object has no attribute 'close'", not "file not found". In `make doctor`, store the `dbt --version` output in a variable before you grep it, or a BrokenPipe traceback appears.
+3. S5.5: the UT2 fixture for `stg_psp__settlement_lines` must set `record_type = 'SALE'`, or the filter drops every statement row.
+4. S7.5: the expected red tests in the mutation table are approximate. Record which tests actually turn red; never edit a test to match the table.
+5. S9.2: for dates after its last published rate, the NBK feed returns no items, not the latest rate. Handle the empty answer.
 
 ## How to use the step ids
 
@@ -162,7 +158,7 @@ When the owner names a step (for example "help with S5.5"):
 1. Open `docs/build_plan.md` and read the step's row: goal, files, commands, who writes it, and its done-when check.
 2. Check that the earlier steps of the milestone are done. Commit messages carry step ids, or ask him. If one is not done, say so before you start.
 3. Read the spec the step points to.
-4. Pick the mode: tutor mode, unless he asks you to write code; then coding-agent mode under "Who writes what".
+4. Build it as "Build mode" describes.
 5. Stay inside the step. Do not start the next step. Never add anything from a later milestone, `docs/roadmap.md` or the README backlog: later features are never stubbed in code.
 6. Finish with the step's checks ("Definition of done").
 7. Put the step id in the commit message ("Commit style").
@@ -173,26 +169,15 @@ When time is short:
 
 1. Point him to the gates, the cut order and the slip rule in `docs/build_plan.md`. When a gate's hard stop has passed, its fallback applies: say so instead of debugging on.
 2. Never suggest cutting these: dedup with its key test; the FULL OUTER JOIN matcher with statuses and dated components; `assert_recon_decomposition_closes` and `assert_no_money_lost_between_layers`; the rerun proof; the synthetic and real labels; keys out of git.
-3. Time pressure never skips the explain-first and walk-through steps in "Who writes what".
+3. Time pressure never skips a **Done when** check or a journal entry.
 
-## Tutor mode (the default)
+## Explaining (when the owner asks)
 
-Use it by default: for every question, and for any code he wants to write himself.
+When he asks about any part of the project:
 
-1. State the step's goal in one or two sentences.
-2. Explain the concept in plain words: what it is, why this project needs it, and the mistake people usually make. Link the entry in `docs/learning/concepts.md` and the official docs. Any example must solve a different, smaller problem, and must not become the step's solution by renaming things.
-3. Check understanding with one to three short questions. The milestone's explain checks in `docs/build_plan.md` are a good source. Wait for his answers. Correct what is wrong, exactly and kindly.
-4. Let him try: 20 to 30 minutes on logic, about 15 minutes on a plumbing blocker.
-5. When he is stuck, give the smallest hint that unblocks him, one level at a time:
-   1. a question that points at the problem;
-   2. a pointer: a spec heading, a docs page, the line of the error message that matters, a function name;
-   3. a shape with blanks, for example a SQL skeleton with `___` where his logic goes;
-   4. a worked example on a different, smaller problem.
-
-   In tutor mode, never go past level 4 and never paste a whole step's solution. If he wants the solution written, he asks for coding-agent mode.
-6. Review his code line by line with the checklist below. For each problem, give the line, what is wrong, the rule or spec it breaks, and why it matters. He writes the fix, or asks you to (coding-agent mode).
-7. Ask him to explain any line he did not mention or that looks copied. A line he cannot explain is not done.
-8. At the end of a milestone, be the examiner: ask its explain checks with no notes allowed, and say honestly which answers were incomplete. For the explain-any-file drill, pick a file at random and have him walk through it line by line.
+1. State the goal of that part in one or two sentences.
+2. Explain it in plain words, with the file and line, why this approach, and the mistake people usually make. Link the entry in `docs/learning/concepts.md` and the official docs.
+3. Offer one to three short questions to check his understanding, and correct his answers exactly and kindly.
 
 ### Review checklist
 
@@ -208,18 +193,6 @@ Use it by default: for every question, and for any code he wants to write himsel
 10. Names exactly as in the specs: datasets, tables, columns, DAG ids, task ids, `make` targets.
 11. No secret, no project id outside `.env`, no banned word, no em dash.
 12. No test deleted, skipped or loosened, and no expected value changed to make a test pass.
-
-## Coding-agent mode
-
-Use it whenever the owner asks you to write code. Every rule in "Who writes what" applies.
-
-1. Explain first: the files and functions, the step id, what the code will do, why this approach and the spec text it follows, and the checks you will run. Wait for his go-ahead.
-2. Read each file and the matching spec text before you edit. Never edit a file you have not read.
-3. Make the smallest diff that does the job: at most 60 lines per delivery, no unrelated edits, no reformatting, no renames.
-4. Never touch the files in "Files you do not touch", and never change code he wrote himself unless he asks.
-5. Run the checks for the change ("Definition of done") and show the real output. If a check uses a command marked "Ask" or "Owner" in "Commands", ask first and wait.
-6. Show the diff and walk him through every line in plain words. Ask him to explain the key parts back.
-7. Do not commit. The owner reads it, annotates it, explains it back and commits. If he asks you to commit, show the exact `git commit` command in "Commit style" format for him to run.
 
 ## Hard rules
 
@@ -321,14 +294,14 @@ Never use: any dbt 2.x, Airflow 3.4.0 release candidates, Cosmos 1.16 release ca
 5. Before proposing a commit: `git check-ignore keys/sa.json .env` prints both paths; `make check` passes (it fails if `git ls-files keys .env` prints anything); `git status` shows nothing staged from `keys/`, `.env`, `runs/`, `logs/`, or `landing/` outside `landing/fx/`.
 6. If a key or `.env` was ever committed, stop and tell the owner at once. He deletes the key in IAM, creates a new one and, if it was pushed, rewrites the history. Never try to hide it with a new commit.
 7. Never change IAM roles, keys or console settings yourself.
-8. Loading `.env` through `make` or the dev shell (`set -a; . ./.env; set +a`) is allowed; reading or printing it is not. Never run `cat .env`, `env`, `printenv`, `set` with no arguments, `set -x`, `docker compose exec ... env` without a `grep` for named variables, or plain `docker compose config`. Prefer a `make` target; for a one-off dbt command, ask the owner to run it in his dev shell.
+8. Loading `.env` through `make` or the dev shell (`set -a; . ./.env; set +a`) is allowed; reading or printing it is not. Never run `cat .env`, `env`, `printenv`, `set` with no arguments, `set -x`, `docker compose exec ... env` without a `grep` for named variables, or plain `docker compose config`. Prefer a `make` target; for a one-off dbt command, use `uv run dbt` with the environment the `Makefile` sets.
 9. If the ADC fallback is used, `~/.config/gcloud/application_default_credentials.json` is a secret like the key: never open, print, copy or paste it.
 
 ### Honesty, labels and vocabulary
 
 Numbers:
 
-1. No number appears as a result unless the owner's own run produced it. Until then, use a placeholder such as `[N]`. Before the repo goes public, a README results row without a measured value is deleted, never left as a placeholder.
+1. No number appears as a result unless a real run of this repo produced it. Until then, use a placeholder such as `[N]`. Before the repo goes public, a README results row without a measured value is deleted, never left as a placeholder.
 2. Every result has a date and a `make` target, and comes from `docs/evidence/<date>/`. Copy it exactly. Never recompute or round it by hand.
 3. Rates, volumes, prices and tolerances in the specs are synthetic design parameters. A count derived from them is a "design consequence, not a result".
 4. Never bring a number from outside this repo (another project, a job, an article) into it as a result.
@@ -388,14 +361,14 @@ Vocabulary:
 
 Never edit, move, delete or regenerate these by hand, unless the owner asks for that exact change:
 
-1. `docs/evidence/`: only `make` targets write it, and the owner runs them.
+1. `docs/evidence/`: only `make` targets write it.
 2. `landing/fx/`: real rates, immutable once landed. `fetch_fx` never fetches a landed date again. Never "fix" a rate.
 3. `uv.lock` and `dbt/package-lock.yml`: only `uv` and `dbt deps` change them.
 4. `keys/` and `.env` ("Secrets").
 5. `landing/_truth/`: the answer key.
 6. `.git/hooks/pre-push` and anything outside the repo.
-7. Records the owner wrote: the results in `docs/testing.md` and existing failure-log entries. Corrections are appended, never rewritten.
-8. Git history and tags: no rebase, amend or force push of pushed commits, and no tags. The owner creates every tag.
+7. Records already written: the results in `docs/testing.md` and existing failure-log entries. Corrections are appended, never rewritten.
+8. Git history and tags: no rebase, amend or force push of pushed commits, and no tags except the ones the plan names (`g1-freeze`, `v1.0`).
 
 ### Freeze rules
 
@@ -426,9 +399,11 @@ Run commands from the repo root. Prefer `make` targets: they set the environment
 
 Who may run what:
 
-- **Agent**: you may run it when the current step needs it.
-- **Ask**: ask the owner each time and wait for a yes. It writes to BigQuery (`probe` or the dev datasets), changes local generated files, or starts containers.
-- **Owner**: only he runs it, in his own terminal. Show him the exact command and wait for him to paste the result. Never run it yourself, even when he asks. It changes Airflow state, the proof datasets (`raw`, `analytics`), committed evidence or real-data files, even when it also does something from the Ask list.
+- **Agent**: a read-only or local check.
+- **Ask**: it writes to BigQuery (`probe` or the dev datasets), changes local generated files, or starts containers.
+- **Owner**: it changes Airflow state, the proof datasets (`raw`, `analytics`), committed evidence or real-data files.
+
+In build mode you run all three classes yourself when the current step needs them. The class tells you how careful to be: before an Ask or Owner command, check the step's preconditions (for example, no active Airflow run), and record every Ask and Owner command with its output in the journal. The owner-only actions in "Build mode" are never yours.
 
 | Target | What it does | Who |
 |---|---|---|
@@ -481,13 +456,13 @@ A step is done only when every item below is true. Report each one with real out
 
 1. The step's done-when check in `docs/build_plan.md` passes, and you or the owner saw the output.
 2. `make check` passes (from step S1.3 on; before that there is no Makefile, so the banned-word grep in "Names" and a search for em dashes stand in for it).
-3. The diff passes the review checklist in "Tutor mode".
+3. The diff passes the review checklist in "Explaining".
 4. The em dash check and the banned-word grep are clean, and the diff holds no secret and no project id.
 5. If a bug happened during the step, its failure-log entry exists.
-6. If a name, a command or a behaviour changed, the owner has updated the README text that describes it, or knows which document is now out of date.
-7. The owner can explain every changed line, whoever wrote it. For agent-written code, you explained it before writing and walked him through every line after, he explained it back in about 2 minutes, and the commit carries `written with AI, reviewed`.
+6. If a name, a command or a behaviour changed, the README text that describes it is updated, or the journal names the document that is now out of date.
+7. The step's journal entry exists and explains every changed file, and the commit carries `written with AI`.
 8. The work is committed in small commits that carry the step id.
-9. At the end of a milestone, the owner has answered its explain checks aloud, with no notes.
+9. At the end of a milestone, the journal answers its explain checks, for the owner to study.
 
 Also true, by kind of change:
 
@@ -513,10 +488,10 @@ If a check cannot run (for example, BigQuery is unreachable), the step is not do
 
    <why, in one to three short lines>
 
-   written with AI, reviewed
+   written with AI
    ```
 
-   The subject line is at most 72 characters. The last line appears only when an agent drafted part of the change.
+   The subject line is at most 72 characters. In build mode every commit carries it.
 3. Types: `feat` (new behaviour), `fix` (a bug fix; its body names the failure-log entry), `test`, `docs`, `build` (`Dockerfile`, compose, `pyproject.toml`, `Makefile`), `ci`, `refactor` (no change in behaviour), `chore` (housekeeping such as `.gitignore`).
 4. Areas: `generator`, `load`, `fx`, `cli`, `dbt`, `dag`, `docker`, `scripts`, `tests`, `docs`, `adr`, `ci`, `repo`.
 5. Examples:
@@ -535,14 +510,14 @@ If a check cannot run (for example, BigQuery is unreachable), the step is not do
    dbt-bigquery 1.12.1 and the Airflow 3.3.2 constraints pin
    different google-cloud-storage versions.
 
-   written with AI, reviewed
+   written with AI
    ```
 6. Never a vague message such as "fix", "update", "wip" or "test".
-7. Write `written with AI, reviewed` only after the owner confirms he reviewed the code. A message never claims that the owner wrote what an agent wrote, or the reverse. Never remove an AI-attribution line that your tool adds.
-8. You never run `git commit`, `git push`, `git tag`, `gh repo create` or `gh repo edit`. Show the exact command; the owner runs it. The repo stays private until the owner makes it public at gate G2. Never change its visibility.
+7. Every commit you make carries `written with AI`. A message never claims that the owner wrote what an agent wrote, or the reverse. Never remove an AI-attribution line that your tool adds.
+8. You commit each step yourself. You may create the private GitHub repo (`gh repo create ledger-vs-statement --private --source . --remote origin`) and push at the end of each milestone; the pre-push hook must run. Create only the tags the plan names. Never run `gh repo edit` and never change the visibility: the repo stays private until the owner makes it public at S10.4.
 9. Never `git push --no-verify`, `git push --force`, `git rebase` or `git commit --amend` on commits that are already pushed.
 10. The mutation check runs on a scratch branch that is never merged.
-11. Tags belong to the owner: `g1-freeze`, then `v1.0` (or the fallback tag named in `docs/build_plan.md`), then `v1.1` to `v1.7`, one per upgrade.
+11. Tags: `g1-freeze`, then `v1.0` (or the fallback tag named in `docs/build_plan.md`), then `v1.1` to `v1.7`, one per upgrade if he asks for the upgrades.
 
 ## Failure log
 
@@ -551,8 +526,8 @@ If a check cannot run (for example, BigQuery is unreachable), the step is not do
 1. Real bugs only: something that actually failed or gave a wrong result here. Never invent an entry, never log a "possible" bug, never copy one from another project.
 2. Write the entry when the bug happens, inside the step (about 5 minutes), not at the end of the day.
 3. Use the entry format at the top of `docs/failure_log.md`. Every entry has at least: the date, the step id, the symptom (the exact error text or the wrong number), how it was found (command or test), the root cause, the fix (with its commit), and the guard that now catches it, if there is one.
-4. The owner writes the root cause and the fix in his own words. When he asks, you may fill in facts from the session: the date, the step id, the command and the exact error text.
-5. After any debugging session, ask him: "Was this a real bug? Shall we log it?"
+4. You write each entry: the facts from the session (the date, the step id, the command, the exact error text), then the root cause and the fix in plain words. The owner may rewrite them later.
+5. After any debugging session, decide honestly whether it was a real bug, and if it was, log it.
 6. These always get an entry: a failing rerun proof, a red error test in an Airflow run, a DML refusal outside probe P2, a row in the wrong partition, a quota error, a leaked secret.
 7. Never delete or rewrite an old entry to make it look better. Add a dated correction instead.
 8. Commit the entry with the fix or right after it. The `fix` commit names its entry.
@@ -562,10 +537,10 @@ If a check cannot run (for example, BigQuery is unreachable), the step is not do
 Stop, say what you see, and wait for the owner when:
 
 1. a request conflicts with a rule in this file;
-2. a command would write to `raw`, `analytics`, `docs/evidence/` or `landing/fx/`, or change Airflow state;
+2. the next action is owner-only ("Build mode");
 3. you find a key, a secret, the project id or a banned word in a file or in the git history;
-4. a test, the identity check or the rerun proof goes red, and the cause is not a typo in the current diff;
+4. a test, the identity check or the rerun proof stays red after you have debugged it and logged it, and the cause is not in code you just wrote. Never loosen a test to get past it;
 5. BigQuery returns a DML error (outside probe P2, where the refusal is the expected result), a quota error, or anything that asks for billing;
 6. the next step needs a sign-up, an account change, a billing step or a new external service;
-7. a spec and the code disagree;
-8. a gate's hard stop in `docs/build_plan.md` has passed. Point to its fallback instead of pushing on.
+7. a spec and the code disagree in a way that changes behaviour (for a small slip, follow the spec and note it in the journal);
+8. a gate's fallback in `docs/build_plan.md` itself fails. When a gate fails, apply its fallback, record it in the journal and go on.
