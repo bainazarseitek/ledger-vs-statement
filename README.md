@@ -391,9 +391,9 @@ The BigQuery sandbox has no billing account. It refuses DML (INSERT, UPDATE, DEL
 
 The DML refusal, exactly as P2 printed it (first line):
 
-> 403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.
+> 403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled, message: Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.
 
-What the results decided: [WRITE: 1-2 sentences: the write path and the authentication you chose, from ADR-0001]
+What the results decided: every probe passed, so the design stands as planned. Each raw table is loaded with one `WRITE_TRUNCATE` load job per arrival day into that day's partition (`<table>$YYYYMMDD`), and the pipeline signs in with the `lvs-pipeline` service-account key, not with ADC.
 
 Not probed: loading a partition dated 70 days back. The docs say it expires at once, and the 45-day guard in `check_window` prevents it.
 

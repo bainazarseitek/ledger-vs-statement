@@ -51,7 +51,7 @@ Fill in from `scripts/g0_probe.py` by Sunday 12:00 (hard stop 13:00). Never past
 | F1 | one Frankfurter request | HTTP 200; weekday rows only | PASS |
 | P8 | optional `copy_partitions` model, run twice | "Copying table(s)"; no "merge into" or "insert into" | not run |
 
-- P2 error text, verbatim from your own run: `403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled`
+- P2 error text, verbatim from your own run (first line; the job id on a later line is left out): `403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled, message: Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.`
 - Write path: decorator loads. Authentication: service-account key.
 - Notes: empty-day rule (P5) partition delete; storage source (P7) `__TABLES__`; FX fetch (F1) live task.
 - Probes run at: 2026-11-01 15:03 UTC
