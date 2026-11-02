@@ -88,3 +88,105 @@ models:
                 field: code
       - name: is_exception
         description: "Any exception cause applies. Never NULL."
+
+  - name: fct_recon_daily
+    description: "One row per MID, currency and day: booked gross vs statement gross, the gap split into dated reason components, and unexplained_minor, which must be 0. Payments SYNTHETIC; USD columns use REAL NBK rates."
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [mid, currency, recon_date]
+    columns:
+      - name: mid
+        data_type: string
+        description: "From the spine: every MID in mids.csv."
+        constraints:
+          - type: not_null
+      - name: currency
+        data_type: string
+        description: "The MID's currency, from mids.csv."
+        constraints:
+          - type: not_null
+      - name: recon_date
+        data_type: date
+        description: "Every day from the earliest to the latest date in the inputs. Our booking day for the ledger side, the PSP's accounting day for the statement side. Days with no activity show zeros. Partition column."
+        constraints:
+          - type: not_null
+      - name: as_of_date
+        data_type: date
+        description: "From stg_recon__as_of."
+        constraints:
+          - type: not_null
+      - name: ledger_line_count
+        data_type: int64
+        description: "Top-down: captures in int_ledger__captures with this booking_date."
+      - name: statement_line_count
+        data_type: int64
+        description: "Top-down: SALE lines with this accounting_date."
+      - name: ledger_gross_minor
+        data_type: int64
+        description: "Top-down: SUM(amount_minor) of int_ledger__captures by booking_date."
+      - name: statement_gross_minor
+        data_type: int64
+        description: "Top-down: SUM(gross_minor) of SALE lines by accounting_date."
+      - name: gap_minor
+        data_type: int64
+        description: "ledger_gross_minor - statement_gross_minor."
+      - name: timing_cutoff_minor
+        data_type: int64
+        description: "Dated component from fct_recon_lines: matched lines whose shift the MID's cut-off explains, +L on the booking date and -L on the accounting date."
+      - name: date_mismatch_minor
+        data_type: int64
+        description: "Dated component: matched lines on an unexplained other day, +L on the booking date and -L on the accounting date."
+      - name: amount_mismatch_minor
+        data_type: int64
+        description: "Dated component: every matched line, L - S on the accounting date."
+      - name: in_transit_minor
+        data_type: int64
+        description: "Dated component: ledger-only lines not yet due, +L on the booking date."
+      - name: missing_in_statement_minor
+        data_type: int64
+        description: "Dated component: ledger-only lines past their due date, +L on the booking date."
+      - name: missing_in_ledger_minor
+        data_type: int64
+        description: "Dated component: statement-only lines in scope, -S on the accounting date."
+      - name: before_scope_minor
+        data_type: int64
+        description: "Dated component: one-sided lines dated before scope_start, +L on the booking date or -S on the accounting date."
+      - name: unexplained_minor
+        data_type: int64
+        description: "gap_minor minus the sum of the seven dated components. Must be exactly 0; assert_recon_decomposition_closes fails otherwise."
+        constraints:
+          - type: not_null
+      - name: statement_fee_minor
+        data_type: int64
+        description: "Top-down: SUM(fee_minor) of SALE lines by accounting_date. Fees never enter the gross identity."
+      - name: statement_net_minor
+        data_type: int64
+        description: "Top-down: SUM(net_minor) of SALE lines by accounting_date."
+      - name: expected_fee_minor
+        data_type: int64
+        description: "SUM(expected_fee_minor) of fct_recon_lines with a statement side, by accounting_date."
+      - name: fee_variance_minor
+        data_type: int64
+        description: "SUM(fee_variance_minor) of the same lines."
+      - name: units_per_usd
+        data_type: numeric
+        description: "Rate for recon_date and currency, from int_fx__usd_rates_daily. NULL before the first fetched rate. REAL."
+      - name: fx_rate_date
+        data_type: date
+        description: "The rate's own date."
+      - name: fx_carry_days
+        data_type: int64
+        description: "Days the rate was carried forward, a project convention, not NBK's official rate for that day."
+      - name: ledger_gross_usd
+        data_type: numeric
+        description: "to_usd(ledger_gross_minor, minor_per_major, units_per_usd). Reporting only."
+      - name: statement_gross_usd
+        data_type: numeric
+        description: "to_usd(statement_gross_minor, minor_per_major, units_per_usd). Reporting only."
+      - name: gap_usd
+        data_type: numeric
+        description: "to_usd(gap_minor, ...), converted once from gap_minor, so it can differ by 0.01 from ledger_gross_usd - statement_gross_usd."
