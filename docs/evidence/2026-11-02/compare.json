@@ -1,0 +1,15 @@
+{
+  "after_file": "fp_after.json",
+  "as_of_after": "2026-11-01",
+  "as_of_before": "2026-11-01",
+  "before_file": "fp_before.json",
+  "changed": [],
+  "groups_after": 146,
+  "groups_before": 146,
+  "groups_identical": 146,
+  "identical": true,
+  "only_after": [],
+  "only_before": [],
+  "rows": 17595,
+  "summary": "146 of 146 (table, partition) groups identical, 17595 rows, as_of 2026-11-01 in both"
+}
