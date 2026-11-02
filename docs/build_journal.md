@@ -1811,4 +1811,344 @@ This follows "recon_daily settings", "recon_daily tasks", "The dbt_build command
 3. *What does a CLI trigger process?* `airflow dags trigger recon_daily -l L` takes its interval from the trigger time, so it processes yesterday relative to now while recording logical date L. Without `-l` there is no interval at all, and `check_window` fails with "No data interval".
 4. *Why newest first?* So the loaded history is always contiguous up to the latest day, and the completeness test and the marts never see a hole.
 
-**Next step:** S7.1, check the backfill.
+## S7.1: check the overnight backfill
+
+**Date and commit:** 2026-11-02, `0e3f837` (the FX files the backfill landed).
+
+**What was built:**
+- No code. 42 new real-data files in `landing/fx/provider=nbk/`: one body file (`arrival_date=R.json`) and one meta file (`arrival_date=R.meta.json`) for each of the 21 run dates 2026-10-04 to 2026-10-24.
+
+**How it works:**
+This step checks the backfill from S6.3 before anything is built on top of it. Two things have to be true: every run is green, and the three raw tables have one non-empty partition for each loaded day. A partition is the slice of a table for one `_arrival_date`. The step also commits the FX files the runs landed. They are real NBK rates, and they are never fetched a second time:
+
+`src/recon/fx.py:53`
+```python
+    if body_path.exists() and meta_path.exists():
+        log.info("already landed: %s", body_path.name)
+        print(f"already landed: {body_path.name}")
+        return {"action": "skipped"}
+```
+
+This is why the backfill landed only 21 new dates. The FX files for 2026-10-25 to 2026-10-31 were committed in S4.3 (`5a83aa0`), and the file for 2026-11-01 was committed in S6.2 (`a59c0b7`). 21 + 7 + 1 = 29 meta files. A fresh clone needs all 29 to rebuild the window with the same rates. Fetching again could return different digits if NBK restated a rate. This follows S7.1 in `docs/build_plan.md` and "Files you do not touch" in `AGENTS.md`, where `landing/fx/` is immutable once landed. The rejected alternative is to leave `landing/fx/` untracked and refetch on a clone. A rate fetched again is not guaranteed to match, and that would break reproducibility.
+
+The settlement count on 2026-10-04 is lower than on the other days, and that is expected. The marts take "the first day" from the oldest loaded arrival day:
+
+`dbt/models/staging/stg_recon__as_of.sql:34`
+```sql
+    min(a._arrival_date) as scope_start
+```
+
+On that first day only USD statement lines can arrive, because statements arrive 1 or 2 days after their accounting date. That is the case the S7.4 completeness test allows for, with an interval open at the start.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state failed`: `No data found`. The same with `--state running`: `No data found`.
+- `airflow dags list-runs recon_daily`: 29 runs, all `success`, logical dates 2026-10-04 to 2026-11-01. That is 28 backfill runs created at 18:31 UTC plus the S6.2 run, all finished by 19:07 UTC.
+- The per-day counts, through the Python client: `raw.payment_events`, `raw.settlement_lines` and `raw.fx_rates` each have 29 partitions, 2026-10-04 to 2026-11-01, and no day has zero rows (synthetic payments, real FX):
+  ```text
+  payment_events    191 to 230 rows per day
+  settlement_lines   43 to 214 rows per day (43 on 2026-10-04, where only USD lines can arrive)
+  fx_rates            5 or 6 rows per day
+  ```
+- `ls landing/fx/provider=nbk/*.meta.json | wc -l`: `29`.
+- `git add landing/fx && git commit ...`: 42 files changed. Then `git status --short landing/fx` printed nothing.
+
+**What went wrong:** Nothing. No run failed, so there is no failure-log entry and no `tasks clear` was needed.
+
+**Interview questions:**
+1. *Why commit real FX files to git when the pipeline could fetch them again?*
+   `fetch_fx` lands each date once and skips it from then on (`src/recon/fx.py:53` to `:56`). A rate fetched later could differ if the source restated it, so a clone that refetched might not rebuild the same USD columns. Committing the exact bodies and their meta files makes the window reproducible.
+2. *Why does `raw.fx_rates` have only 5 or 6 rows per day when each request covers 7 days?*
+   The request for run date R covers R-6 to R. NBK does not publish a rate on every calendar day, so some days in that range have no item. The daily FX model carries the last rate forward over those days, which is a project convention, not NBK's official rate for that day.
+
+## S7.2: `fct_recon_exceptions`, and its two columns in the daily mart
+
+**Date and commit:** 2026-11-02, `6693bc5`.
+
+**What was built:**
+- `dbt/models/marts/fct_recon_exceptions.sql`: the analyst work queue, built as a view. It has one row per (`payment_id`, `cause`).
+- `dbt/models/marts/fct_recon_daily.sql`: a new CTE `exceptions_daily` and two new columns, `exception_count` and `exception_abs_minor`.
+- `dbt/models/marts/_marts.yml`: the model's description and three tests. These are `unique_combination_of_columns` on (`payment_id`, `cause`), `not_null` on `amount_minor`, and `relationships` from `cause` to `reason_codes.code`. The two new columns were also added to the `fct_recon_daily` contract, at positions 22 and 23.
+
+**How it works:**
+The queue reads `fct_recon_lines` and drops every out-of-scope line first:
+
+`dbt/models/marts/fct_recon_exceptions.sql:30`
+```sql
+    where l.match_status != 'before_scope'
+```
+
+It then builds one `SELECT` per cause and stacks them with `UNION ALL` (`:34` to `:84`). One line can have two causes, for example an amount difference and a fee overcharge, so it can produce two rows, each with its own signed amount and cause date. The sign rule is that positive means the ledger has more, or the PSP overcharged. That is why a payment missing from the ledger is negated:
+
+`dbt/models/marts/fct_recon_exceptions.sql:49`
+```sql
+        -l.statement_gross_minor as amount_minor,
+```
+
+Each branch carries only `payment_id`, `cause`, `amount_minor` and `cause_date`. The stacked result is joined back to the filtered lines on `payment_id` (`:102` to `:104`) to get `mid`, the dates and the evidence ids. This is safe because `payment_id` is unique in `fct_recon_lines`, and a test enforces that. `age_days` uses `DATE_DIFF` against the loaded `as_of_date`, never the wall clock (`:96`).
+
+The daily mart counts the queue by `cause_date` and sums absolute values, so a +100 break and a -100 break on the same day cannot cancel to 0:
+
+`dbt/models/marts/fct_recon_daily.sql:186`
+```sql
+        sum(if(e.cause != 'date_mismatch', abs(e.amount_minor), 0)) as exception_abs_minor
+```
+
+`date_mismatch` is counted but not summed. Its amount is a whole payment that was booked on the wrong day, not money lost.
+
+This follows `fct_recon_exceptions` and the "Columns (the contract, in this order)" table under `fct_recon_daily` in `docs/specs/dbt_project.md`, and ADR-0008, which makes this the one mart that is a view. A view stores nothing and derives from the fingerprinted lines table. The rejected alternatives are these:
+- A table, which would store a second copy of data the lines table already holds.
+- A signed daily sum, where offsetting breaks would hide each other.
+- Repeating every output column in all five branches. That is longer and easier to get out of order, so the join back was used instead.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state running` and `--state queued`: both `No data found`, before any edit under `dbt/`.
+- `uv run dbt --version`: `installed: 1.12.6`, `bigquery: 1.12.1 - Up to date!`.
+- `make dbt-build`:
+  ```text
+  47 of 53 OK created sql view model analytics_dev.fct_recon_exceptions ... CREATE VIEW (0 processed)
+  51 of 53 OK created sql table model analytics_dev.fct_recon_daily ... CREATE TABLE (18.0 rows, 453.4 KiB processed)
+  Done. PASS=53 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=53
+  ```
+  The three new tests, `assert_recon_decomposition_closes` and the `fct_recon_daily` uniqueness test all passed. The NUMERIC precision warning is the expected one.
+- The done-when query through `recon.bq` (`use_cache=False`), `select cause, count(*) from analytics_dev.fct_recon_exceptions group by 1`, on synthetic dev data:
+  ```text
+  amount_mismatch 4, fee_mismatch 30, missing_in_ledger 6, missing_in_statement 2
+  ```
+  Only exception causes appear. There are no `before_scope`, `matched`, `in_transit` or `timing_cutoff` rows, and the dev data has no `date_mismatch` rows.
+- Extra checks (synthetic):
+  - `sum(exception_count)` = 42, the same as the 42 queue rows. `countif(unexplained_minor != 0)` = 0.
+  - Signs: `missing_in_statement` 2 of 2 positive, `missing_in_ledger` 6 of 6 negative.
+  - `age_days` is between 1 and 6.
+  - 0 queue rows have no matching row in the daily spine.
+- `make check`: exit 0 (9 passed). The em dash check on `dbt/`: exit 1 (clean). The grep for DML, `CURRENT_DATE`, `CURRENT_TIMESTAMP` and `float` in `dbt/models/marts`: no match.
+
+**What went wrong:** No bug, so there is no failure-log entry. The first build was green. Review found nothing.
+- The permission check denied the banned-word grep in this step. The S7.4 and S7.5 runs of it, over the whole tree with `--untracked`, were clean, so this step's text is now covered.
+- The `fct_recon_daily` contract was already enforced, from S5.6. The two columns therefore had to go into the contract now, or the build would stop.
+- The uncommitted `Makefile` change and the untracked `scripts/*.py` and `.vscode/` were not this step's and were not staged.
+
+**Interview questions:**
+1. *Why does the queue have one row per line and cause, not one per line?*
+   A line can have more than one problem at once, for example a short settlement and a fee overcharge. Each problem has its own signed amount, its own cause date and its own analyst action. One row per line would have to merge them and lose one amount. The key (`payment_id`, `cause`) is tested as unique.
+2. *Why does `exception_abs_minor` sum absolute values?*
+   A day with a +5000 amount mismatch and a -5000 missing line would sum to 0 signed, which looks like a clean day. The absolute sum shows 10000 of breaks for an analyst to work. The identity test still uses signed components, so this column is for the warning gate and for reporting.
+
+## S7.3: enforce the `fct_recon_daily` contract
+
+**Date and commit:** 2026-11-02, `c6cba6c` (an empty commit that records the check). The contract itself is in `6c97a10` (S5.6), and `6693bc5` (S7.2) added its columns 22 and 23.
+
+**What was built:**
+- No file changed in this step. `dbt/models/marts/_marts.yml` was checked against the spec, broken on purpose, and restored. `c6cba6c` has no file change. Its body says the contract landed early in S5.6.
+
+**How it works:**
+A model contract lists the exact columns and types a model must return. With the contract enforced, dbt compares the model's SQL output with that list before it builds the table, and stops the build on any difference:
+
+`dbt/models/marts/_marts.yml:139`
+```yaml
+    config:
+      contract:
+        enforced: true
+```
+
+Every one of the 29 columns has a `data_type`. `not_null` sits on `mid`, `currency`, `recon_date`, `as_of_date` and `unexplained_minor`:
+
+`dbt/models/marts/_marts.yml:203`
+```yaml
+      - name: unexplained_minor
+        data_type: int64
+        description: "gap_minor minus the sum of the seven dated components. Must be exactly 0; assert_recon_decomposition_closes fails otherwise."
+        constraints:
+          - type: not_null
+```
+
+The contract compiles into `create or replace table ... (mid string not null, ...) as select ...`. That is DDL (a statement that defines a table), not DML, so the sandbox allows it. BigQuery enforces only `not_null`, so uniqueness of (`mid`, `currency`, `recon_date`) stays a data test. This follows "Columns (the contract, in this order)" under `fct_recon_daily` in `docs/specs/dbt_project.md` and "Contracts" in `docs/learning/concepts.md`. The rejected alternative is to rely on data tests alone. A changed type would then reach readers before any test noticed it. A uniqueness constraint was not an option either, because BigQuery does not enforce one.
+
+The plan puts the contract in S7.3 ("Order of work" in `docs/specs/dbt_project.md`), but it shipped early in S5.6. This step therefore did the two things that were still open: it checked every type by hand against the spec, and it proved the contract can fail.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state running` and `--state queued`: both `No data found`, before the build and again right before the deliberate edit.
+- `uv run dbt --version`: Core 1.12.6, bigquery 1.12.1.
+- The type check: a script compared the spec table with `_marts.yml`. The result was `{'enforced': True}`, 29 spec rows against 29 YAML rows, all matching in name, `data_type` and `not_null`, in the same order:
+  - `mid` and `currency` are string.
+  - `recon_date`, `as_of_date` and `fx_rate_date` are date.
+  - `units_per_usd` and the three `*_usd` columns are numeric.
+  - Every other column is int64.
+- `make dbt-build` with the contract:
+  ```text
+  51 of 53 OK created sql table model analytics_dev.fct_recon_daily .. CREATE TABLE (18.0 rows, 453.4 KiB processed)
+  Done. PASS=53 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=53
+  ```
+  The compiled DDL starts with ``create or replace table `<project>`.`analytics_dev`.`fct_recon_daily` ( mid string not null, ...``. A grep for insert, update, delete and merge in it found 0 matches.
+- The deliberate failure: `unexplained_minor` set to `data_type: string`, then `make dbt-build` (exit 2):
+  ```text
+  This model has an enforced contract that failed.
+  | column_name       | definition_type | contract_type | mismatch_reason    |
+  | unexplained_minor | INT64           | STRING        | data type mismatch |
+  Done. PASS=50 WARN=0 ERROR=1 SKIP=2 NO-OP=0 REUSED=0 TOTAL=53
+  ```
+  The error comes at compile time, so the table from the green build was not replaced.
+- `git restore dbt/models/marts/_marts.yml`, then `git status --short dbt/`: no output. `make dbt-build` after the undo: `PASS=53 WARN=0 ERROR=0`.
+- `make check`: 9 passed, exit 0. The em dash check: exit 1 (clean). `git check-ignore keys/sa.json .env`: both paths printed.
+
+**What went wrong:** No real bug, so there is no failure-log entry. The deliberate `string` change is a planned test, not a bug.
+
+Review confirmed 3 findings:
+- There was no S7.3 commit.
+- The failure test had no record.
+- There was no journal entry.
+
+The fixes:
+- History was not rewritten, because `6c97a10` is pushed and comes before `g1-freeze`. The 29 types were checked again, and the empty commit `c6cba6c` was made before the failure test, which was then run again with the output above.
+- This entry is the record for the second and third findings.
+
+Two points remain for the owner:
+- The plan slip: the contract shipped in S5.6, not S7.3. It changes no behaviour.
+- `c6cba6c` uses the type `fix` but names no failure-log entry, because there was no bug.
+
+The banned-word grep was denied here too. The clean whole-tree runs in S7.4 and S7.5 cover it.
+
+**Interview questions:**
+1. *When the type was wrong, was the old table damaged?*
+   No. dbt compares the column types the SQL would return with the contract before it runs the `create or replace table`. The mismatch stopped the build at compile time, so `analytics_dev.fct_recon_daily` kept the table from the last green build, and the two dependent tests were skipped.
+2. *Why is uniqueness a data test and not a contract constraint?*
+   On BigQuery only `not_null` is enforced. `primary_key` can be declared but is not checked, and `unique` is not supported. So (`mid`, `currency`, `recon_date`) is checked by `dbt_utils.unique_combination_of_columns`, which runs a query and fails on any duplicate.
+
+## S7.4: the completeness error test and the two warning gates
+
+**Date and commit:** 2026-11-02, `e2e919d`.
+
+**What was built:**
+- `dbt/tests/assert_arrival_days_complete.sql` (error): fails when a raw file is missing for a day.
+- `dbt/tests/warn_exception_share_7d.sql` (warn): flags a MID whose breaks are a large share of its booked gross over 7 days.
+- `dbt/tests/warn_fx_restated.sql` (warn): flags a rate date that has more than one published value.
+
+**How it works:**
+A singular test is a SQL file that passes when it returns no rows. The completeness test builds a spine, which is one row per day from `scope_start` to `as_of_date`:
+
+`dbt/tests/assert_arrival_days_complete.sql:11`
+```sql
+    cross join unnest(generate_date_array(a.scope_start, a.as_of_date)) as d
+```
+
+It returns every spine day with no `payment_events` partition (`:32` to `:43`). It also returns every (day, MID) with no statement lines, crossing the spine with the `mids` seed. For statements the interval is open at the start:
+
+`dbt/tests/assert_arrival_days_complete.sql:56`
+```sql
+    where sp.arrival_date > sp.scope_start
+```
+
+On the first loaded day a MID can rightly have no statement lines, because the sales they would settle are older than the loaded history. The 43 USD-only lines on 2026-10-04 in S7.1 are that case.
+
+The two warning tests start with `{{ config(severity='warn') }}`, so a hit prints WARN and the run goes on. The exception-share gate needs both a high share and a minimum count:
+
+`dbt/tests/warn_exception_share_7d.sql:29`
+```sql
+where safe_divide(cast(g.abs_sum as numeric), cast(g.gross_sum as numeric))
+        > numeric '{{ var("exception_share_warn") }}'
+    and g.exception_sum >= {{ var('exception_min_count') }}
+```
+
+Both values are cast to NUMERIC before the division, so no FLOAT64 appears. The limits come from `dbt_project.yml`: `exception_share_warn` 0.02, `exception_min_count` 5, `gate_window_days` 7. `warn_fx_restated` groups the raw FX rows by (`provider`, `base`, `quote`, `rate_date`). It returns groups with more than one `rate_text`, with the values in `STRING_AGG`.
+
+This follows "Singular tests (`dbt/tests/`)" in `docs/specs/dbt_project.md` and "Data quality checks: integrity gates and business gates" in `docs/learning/concepts.md`. A missing file is an incident and must stop the run. Without the test, it would look like a pile of `missing_in_statement` lines. Many exceptions, or a restated rate, are business output for an analyst, not a pipeline failure. The rejected alternatives are these:
+- Making the share gate an error, which would fail the pipeline on normal business noise.
+- A gate on the share alone. About 70 KZT payments a day make one break enough to trip it.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state running` and `--state queued`: both `No data found`.
+- `uv run dbt --version`: installed 1.12.6, bigquery 1.12.1.
+- `make dbt-build` (exit 0):
+  ```text
+  5 of 56 PASS warn_fx_restated ... [PASS in 2.31s]
+  7 of 56 PASS assert_arrival_days_complete ... [PASS in 2.87s]
+  56 of 56 PASS warn_exception_share_7d ... [PASS in 2.41s]
+  Done. PASS=56 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=56
+  ```
+  The NUMERIC precision warning is the existing one from the contract, not a test result.
+- `make check`: 9 passed, exit 0.
+- The em dash check on `dbt/tests`: exit 1 (clean). The banned-word grep, over the whole tree with `--untracked`: exit 1 (clean). `git check-ignore keys/sa.json .env`: both paths printed.
+- The grep for insert, update, delete, merge, `current_date`, `current_timestamp` and `float` in the 3 tests: no match.
+
+**What went wrong:** Nothing. All three tests passed on the first build, so there is no failure-log entry. Review found nothing. The changes in the tree that were not this step's (`Makefile`, `scripts/*.py`, `.vscode/`) were left out of the commit.
+
+**Interview questions:**
+1. *Why is the statement interval open at the start but the payment interval closed?*
+   Payment webhooks arrive on the day they happen, so every loaded day must have some. Statements arrive 1 or 2 days after their accounting date, so on the first loaded day a MID may have nothing to settle yet. Requiring lines on `scope_start` would fail a correct history.
+2. *Why is a high exception share only a warning?*
+   Breaks are what reconciliation exists to find. A bad day for a MID is work for an analyst, not proof that the pipeline is broken. A missing file is different: the numbers built on it would be wrong, so that test stays at error.
+
+## S7.5: the mutation check, mutations 1 to 4
+
+**Date and commit:** 2026-11-02, `f0712cb`.
+
+**What was built:**
+- `docs/testing.md`: the mutation table (mutation, file, expected red, observed red, result) and how each mutation was run. All 4 were caught.
+- The mutations were made only on the scratch branch `mutation-check`. They were never committed, and the branch was deleted.
+
+**How it works:**
+A mutation is a deliberate one-line bug. If a test turns red, the test can fail. If no test turns red, the test proves nothing. Mutations 1, 2 and 4 hit the matcher. Mutation 1 changes its join:
+
+`dbt/models/marts/fct_recon_lines.sql:82`
+```sql
+    full outer join statement as s
+```
+
+Mutation 2 changes `<` to `<=` in the in-transit rule:
+
+`dbt/models/marts/fct_recon_lines.sql:112`
+```sql
+            when t.has_ledger and t.as_of_date < t.due_date then 'in_transit'
+```
+
+Mutation 4 moves the statement CTE's `SALE` filter (`:54`) to after the join. Mutation 3 removes the dedup:
+
+`dbt/models/staging/stg_psp__payment_events.sql:23`
+```sql
+qualify row_number() over (
+    partition by e.event_id
+    order by e.delivered_ts, e.delivery_id
+) = 1
+```
+
+Each mutation ran as `dbt run` then `dbt test`, not as `make dbt-build`. `dbt build` does not build a model whose unit test fails. Mutations 1 and 4 also break UT2, so the old tables would stay in place and the identity tests would pass on them. `dbt run` builds the mutated model whatever the unit tests say. The red tests were read from `dbt/target/run_results.json`. A mutation counts as caught when at least one of its expected tests is red. Every test that turned red was recorded, not only the expected ones (Known trap 4 in `AGENTS.md`).
+
+This follows "Mutation check (step S7.5, and mutation 5 in S11.3)" in `docs/specs/dbt_project.md` and "The mutation check" in `docs/learning/concepts.md`. The rejected alternatives are these:
+- Running the mutations with `make dbt-build`, which gives false green results.
+- Editing the expected column to match what turned red.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state running` and `--state queued`: both `No data found`, before the first branch switch and again before switching back.
+- `uv run dbt --version`: installed 1.12.6, bigquery 1.12.1.
+- Baseline `make dbt-build` on `main` at `e2e919d`: `PASS=56 WARN=0 ERROR=0 SKIP=0`.
+- On `mutation-check`, every `dbt run` gave `PASS=9 ERROR=0`. The `dbt test` results (synthetic dev data):
+  ```text
+  M1 INNER JOIN       PASS=41 ERROR=3  assert_recon_decomposition_closes, assert_no_money_lost_between_layers, ut_lines_status_and_date_shift (UT2)
+  M2 < to <=          PASS=43 ERROR=1  ut_lines_status_and_date_shift (UT2)
+  M3 QUALIFY removed  PASS=38 ERROR=6  unique_stg_psp__payment_events_event_id, unique_int_ledger__captures_payment_id,
+                                       unique_fct_recon_lines_payment_id, dbt_utils_unique_combination_of_columns_fct_recon_exceptions_payment_id__cause,
+                                       assert_recon_decomposition_closes, assert_no_money_lost_between_layers
+  M4 SALE moved       PASS=41 ERROR=3  assert_no_money_lost_between_layers, assert_recon_decomposition_closes, ut_lines_status_and_date_shift (UT2)
+  ```
+  Every red test had status `"fail"` in `run_results.json`.
+- After each revert with `git checkout -- <file>`, `git status --short dbt/` was empty. `git switch main && git branch -D mutation-check` printed `Deleted branch mutation-check (was e2e919d)`, so the branch held no commit.
+- `make dbt-build` on `main` afterwards: `PASS=56 WARN=0 ERROR=0 SKIP=0`.
+- `make check`: 9 passed, exit 0. The em dash check on `docs/testing.md`: exit 1 (clean). The banned-word grep: exit 1 (clean). `git check-ignore keys/sa.json .env`: both paths printed.
+
+**What went wrong:** No bug. All four mutations were caught, so there is no failure-log entry. Review found nothing. Three points of interpretation are recorded in `docs/testing.md`:
+- Mutation 3 removed the whole four-line `qualify` clause, so the SQL still compiles.
+- Mutation 4 also added `s.record_type` to the statement CTE's columns, so the moved filter compiles.
+- The observed column lists more tests than the expected one.
+
+Per-test failure row counts were left out, because they are not saved in `docs/evidence/`. One note for the owner: `docs/testing.md` line 10 says "Run on 2026-11-03", which is the local date (UTC+5). In UTC the run was on 2026-11-02, the date the commit time gives. The record is not rewritten. A dated correction can be appended if the owner wants UTC there.
+
+**Interview questions:**
+1. *Why run a mutation with `dbt run` and `dbt test` instead of `dbt build`?*
+   `dbt build` runs a model's unit tests first and does not build the model if one fails. It also skips everything downstream. A mutation that breaks UT2 would leave yesterday's correct tables in place, and the identity tests would pass on them. `dbt run` builds the broken model, so `dbt test` checks the broken output.
+2. *What would you do if a mutation had stayed green?*
+   That is a finding, not a pass. It means no test guards that line. Log it in `docs/failure_log.md`, add the missing test, and run the mutation again until the new test turns red. Never weaken the mutation or edit the table to look caught.
+
+## Review of S7.2 to S7.5 (2026-11-02)
+
+Each step had a spec reviewer and a hard-rules reviewer, and every finding two skeptics. S7.2, S7.4 and S7.5 had no findings. In S7.3 three were confirmed, all about records, not code: the contract had already been enforced in S5.6 (`6c97a10`, before `g1-freeze`, so history is not rewritten), there was no S7.3 commit, and the deliberate failure test had no record. The fixer re-ran the failure test (`unexplained_minor | INT64 | STRING | data type mismatch`, `ERROR=1`, then `git restore` and a clean `git status --short dbt/`) and recorded the check in the empty commit `c6cba6c`. `docs/testing.md` gave the Astana date for the mutation run; a dated correction with the UTC date was appended (`4377cb9`).
+
+**Next step:** S7.6, rebuild the latest marts with the final dbt code.
