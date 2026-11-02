@@ -11,7 +11,7 @@ RAW_DS ?= raw
 MARTS_DS ?= analytics
 AIRFLOW := docker compose exec -T airflow-scheduler airflow
 
-.PHONY: doctor setup lint test check probe bq-setup day days up down smoke unpause pause dbt-build dbt-unit
+.PHONY: doctor setup lint test check probe bq-setup day days up down smoke unpause pause backfill-dry backfill dbt-build dbt-unit
 
 doctor:
 	which -a dbt
@@ -70,3 +70,11 @@ unpause:
 
 pause:
 	$(AIRFLOW) dags pause recon_daily
+
+backfill-dry:
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "backfill-dry: set FROM=YYYY-MM-DD TO=YYYY-MM-DD" >&2; exit 1; }
+	$(AIRFLOW) backfill create --dag-id recon_daily --from-date $(FROM) --to-date $(TO) --run-backwards --max-active-runs 1 --dry-run
+
+backfill:
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "backfill: set FROM=YYYY-MM-DD TO=YYYY-MM-DD" >&2; exit 1; }
+	$(AIRFLOW) backfill create --dag-id recon_daily --from-date $(FROM) --to-date $(TO) --run-backwards --max-active-runs 1
