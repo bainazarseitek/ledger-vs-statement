@@ -40,7 +40,7 @@ I chose the sandbox because it is the only option that is real BigQuery, needs n
 
 ### G0 results
 
-From `scripts/g0_probe.py` (`make probe`), saved in `docs/evidence/2026-11-01/g0_probe.json`. No project id and no job id appear here. Code, fallbacks and decision rules: "G0 probes runbook" and "Decision rules at G0" in `docs/specs/bigquery_sandbox_and_costs.md`.
+Only the rows P1 to P7 and F1 are from `scripts/g0_probe.py` (`make probe`), saved in `docs/evidence/2026-11-01/g0_probe.json`. The rows S1.1 to S1.3 are setup checks, not probe output, and that file does not hold them: they are recorded in the S1.1, S1.2 and S1.3 entries of `docs/build_journal.md` (the owner's console check, the `git check-ignore keys/sa.json` output, and `make doctor` with `Command dbt debug succeeded`). P8 is optional and was not run, so that file has no P8 entry; the S1.5 entry of `docs/build_journal.md` records that. No project id and no job id appear here. Code, fallbacks and decision rules: "G0 probes runbook" and "Decision rules at G0" in `docs/specs/bigquery_sandbox_and_costs.md`.
 
 | Id | Checks | Pass when | Result |
 |---|---|---|---|
