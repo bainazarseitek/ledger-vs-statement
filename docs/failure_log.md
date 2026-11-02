@@ -88,7 +88,7 @@ Some steps ask you to watch a test fail on purpose before the logic exists. Reco
 | Test or check | Step | Red run (date, commit) | First failure line | Green commit |
 |---|---|---|---|---|
 | UT1 `ut_captures_cutoff_both_directions` | S5.3 | 2026-11-02, `72d7ad3` (naive `expected_accounting_date = DATE(event_ts)`) | `1 of 1 FAIL 1 int_ledger__captures::ut_captures_cutoff_both_directions`: `pay_k2`, `pay_k3`, `pay_u1` and `pay_u3` differ in `expected_accounting_date` and `due_date` | `4c131b9` |
-| UT2 `ut_lines_status_and_date_shift` | S5.5 | | | |
+| UT2 `ut_lines_status_and_date_shift` | S5.5 | 2026-11-02, `8ed9fe6` (first version labels every line `matched`, no flags, no fee check) | `1 of 2 FAIL 1 fct_recon_lines::ut_lines_status_and_date_shift`: every row but `pay_c` differs in `match_status`, every row in `primary_reason`, `pay_c` to `pay_f` in the fee columns, `pay_c` and `pay_d` in `date_shift`, and `pay_b`, `pay_d` and `pay_e` in `is_exception` | |
 | UT3 `ut_events_dedup_first_delivery` | S11.1 | | | |
 | UT4 `ut_lines_fee_boundary_and_two_causes` | S11.2 | | | |
 

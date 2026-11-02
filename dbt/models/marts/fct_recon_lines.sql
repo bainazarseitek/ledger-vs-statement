@@ -4,8 +4,10 @@
     cluster_by=['mid']
 ) }}
 
--- First version for the UT2 red run: it joins both sides but labels every
--- line matched, with no flags and no fee check.
+-- The matcher. An equality FULL OUTER JOIN on payment_id keeps the
+-- one-sided lines, which are the interesting ones. Every status is judged
+-- against as_of_date from the loaded data, never the wall clock. Money stays
+-- INT64: the fee check uses DIV only.
 with as_of as (
 
     select
@@ -47,6 +49,8 @@ statement as (
         s.fee_minor,
         s.net_minor
     from {{ ref('stg_psp__settlement_lines') }} as s
+    -- The filter sits here, before the join. After the join it would also
+    -- drop every ledger-only line, whose statement columns are NULL.
     where s.record_type = 'SALE'
 
 ),
@@ -95,40 +99,108 @@ with_terms as (
         on j.mid = m.mid
     cross join as_of as o
 
+),
+
+classified as (
+
+    select
+        t.*,
+        coalesce(t.booking_date, date(t.captured_ts)) as recon_date,
+        case
+            when t.has_ledger and t.has_statement then 'matched'
+            when t.has_ledger and t.booking_date < t.scope_start then 'before_scope'
+            when t.has_ledger and t.as_of_date < t.due_date then 'in_transit'
+            when t.has_ledger then 'missing_in_statement'
+            when date(t.captured_ts) < t.scope_start then 'before_scope'
+            else 'missing_in_ledger'
+        end as match_status,
+        case
+            when not (t.has_ledger and t.has_statement) then null
+            when t.accounting_date = t.booking_date then 'none'
+            when t.accounting_date = t.expected_accounting_date then 'timing_cutoff'
+            else 'date_mismatch'
+        end as date_shift,
+        case
+            when t.has_ledger and t.has_statement
+                then t.ledger_amount_minor - t.statement_gross_minor
+        end as amount_diff_minor,
+        t.has_ledger and t.has_statement
+        and t.ledger_amount_minor - t.statement_gross_minor != 0 as is_amount_mismatch
+    from with_terms as t
+
+),
+
+fees as (
+
+    select
+        c.*,
+        -- + 5000 then DIV rounds half up; + 9999 then DIV is a ceiling.
+        div(c.statement_gross_minor * c.fee_bps + 5000, 10000) + c.fee_fixed_minor as expected_fee_minor,
+        greatest(c.fee_tol_min_minor, div(c.statement_gross_minor * c.fee_tol_bps + 9999, 10000)) as fee_tolerance_minor,
+        c.statement_fee_minor
+        - (div(c.statement_gross_minor * c.fee_bps + 5000, 10000) + c.fee_fixed_minor) as fee_variance_minor
+    from classified as c
+
+),
+
+flagged as (
+
+    select
+        f.*,
+        -- A variance equal to the tolerance is within it.
+        f.has_statement and f.match_status != 'before_scope'
+        and abs(f.fee_variance_minor) > f.fee_tolerance_minor as is_fee_mismatch
+    from fees as f
+
 )
 
 select
-    j.payment_id,
-    j.mid,
-    j.currency,
-    j.has_ledger,
-    j.has_statement,
-    j.event_id,
-    j.copies_received,
-    j.event_ts,
-    j.booking_date,
-    j.ledger_amount_minor,
-    j.expected_accounting_date,
-    j.due_date,
-    j.line_id,
-    j.statement_id,
-    j.captured_ts,
-    j.accounting_date,
-    j.statement_arrival_date,
-    j.statement_gross_minor,
-    j.statement_fee_minor,
-    j.statement_net_minor,
-    coalesce(j.booking_date, date(j.captured_ts)) as recon_date,
-    j.scope_start,
-    j.as_of_date,
-    'matched' as match_status,
-    cast(null as string) as date_shift,
-    cast(null as int64) as amount_diff_minor,
-    false as is_amount_mismatch,
-    cast(null as int64) as expected_fee_minor,
-    cast(null as int64) as fee_tolerance_minor,
-    cast(null as int64) as fee_variance_minor,
-    false as is_fee_mismatch,
-    'matched' as primary_reason,
-    false as is_exception
-from with_terms as j
+    g.payment_id,
+    g.mid,
+    g.currency,
+    g.has_ledger,
+    g.has_statement,
+    g.event_id,
+    g.copies_received,
+    g.event_ts,
+    g.booking_date,
+    g.ledger_amount_minor,
+    g.expected_accounting_date,
+    g.due_date,
+    g.line_id,
+    g.statement_id,
+    g.captured_ts,
+    g.accounting_date,
+    g.statement_arrival_date,
+    g.statement_gross_minor,
+    g.statement_fee_minor,
+    g.statement_net_minor,
+    g.recon_date,
+    g.scope_start,
+    g.as_of_date,
+    g.match_status,
+    g.date_shift,
+    g.amount_diff_minor,
+    g.is_amount_mismatch,
+    g.expected_fee_minor,
+    g.fee_tolerance_minor,
+    g.fee_variance_minor,
+    g.is_fee_mismatch,
+    -- The first true condition wins, in the precedence of reason_codes.csv.
+    case
+        when g.match_status = 'missing_in_statement' then 'missing_in_statement'
+        when g.match_status = 'missing_in_ledger' then 'missing_in_ledger'
+        when g.is_amount_mismatch then 'amount_mismatch'
+        when g.is_fee_mismatch then 'fee_mismatch'
+        when g.date_shift = 'date_mismatch' then 'date_mismatch'
+        when g.match_status = 'in_transit' then 'in_transit'
+        when g.date_shift = 'timing_cutoff' then 'timing_cutoff'
+        when g.match_status = 'before_scope' then 'before_scope'
+        else 'matched'
+    end as primary_reason,
+    -- FALSE OR NULL is NULL in BigQuery: the coalesce keeps it TRUE or FALSE.
+    g.match_status in ('missing_in_statement', 'missing_in_ledger')
+    or g.is_amount_mismatch
+    or g.is_fee_mismatch
+    or coalesce(g.date_shift = 'date_mismatch', false) as is_exception
+from flagged as g
