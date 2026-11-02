@@ -602,3 +602,4 @@ Then, when you are done with the project:
 - Code and documentation: MIT, see [LICENSE](LICENSE), which names the copyright holder.
 - `docker-compose.yaml` is adapted from the Apache Airflow project's docker-compose file (Apache License 2.0) and keeps its licence header.
 - Exchange rates: National Bank of the Republic of Kazakhstan (nationalbank.kz), retrieved through Frankfurter (frankfurter.dev). The files in `landing/fx/` are third-party public data, included as published and not covered by the MIT licence. The cross-check files in `landing/fx/provider=nbk_rss/` come directly from NBK's own RSS feed, not through Frankfurter.
+- NBK's terms: its [Data License](https://nationalbank.kz/en/page/data-usage-terms) page, checked on 2026-11-02 (UTC), lets anyone copy, publish and distribute its official statistical information free of charge, with reference to the source. The line above is that reference.
