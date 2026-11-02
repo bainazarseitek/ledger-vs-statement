@@ -46,6 +46,7 @@ Add one row per entry, newest at the bottom.
 
 | Id | Date | Step | Area | What broke | Status |
 |---|---|---|---|---|---|
+| F-001 | 2026-11-01 | S0.2 | setup | the pre-push hook was installed with the wrong lines of the plan | fixed |
 
 ## Entry format
 
@@ -95,4 +96,24 @@ Add a row for any other planned failure that a step asks for, for example the U3
 
 ## Entries
 
-No entries yet. The first real bug goes here as F-001.
+### F-001: the pre-push hook was installed with the wrong lines of the plan (written 2026-11-02)
+
+- **Date:** 2026-11-01 20:00 (UTC+5)
+- **Step:** S0.2
+- **Area:** setup
+- **Commit where it showed:** not committed (the hook lives in `.git/hooks/`, outside the tracked tree)
+- **Command:** `echo "refs/heads/main $(git rev-parse main) refs/heads/main 0000000000000000000000000000000000000000" | .git/hooks/pre-push origin test; echo "exit=$?"`
+- **First error line (exact):**
+  ```text
+  .git/hooks/pre-push: line 1: -: command not found
+  ```
+- **Expected:** `exit=0` on `main` with the real word list.
+- **Actual:** `exit=2`. The hook file began with the two Markdown lines `- **The hook text:**` and ```` ```sh ````, and its last two lines (`fi` and `exit "$status"`) were missing.
+- **Root cause:** the install command copied lines 307 to 364 of `docs/build_plan.md` by number. The plan had changed after it was first read, and the hook block had moved down by two lines, so the copy was shifted by two lines.
+- **How I found it:** the hook's own run on `main` printed a shell error instead of `exit=0`; `head -5 .git/hooks/pre-push | cat -vet` showed the Markdown lines.
+- **Fix:** not committed (outside the tracked tree). The hook is now extracted between its code-fence markers with `awk`, not by line numbers, and compared with the plan text (`diff -q`, identical).
+- **Proof it is fixed:** the canary run prints `hook_test.txt:1:zqxwcanary`, then `pre-push: banned word in the files of commit 00258c8...` and `exit=1`; the run on `main` prints `exit=0`.
+- **Guard added:** none in the repo. The hook fails closed (a broken hook blocks every push), so this bug could not leak a word, only block pushes.
+- **Time lost:** 15
+- **What I learned:** copy text out of a document by its markers, never by line numbers, because the document can change between reading and copying.
+- **Status:** fixed
