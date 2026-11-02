@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import tomllib
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -112,6 +113,10 @@ def test_each_row_in_exactly_one_file(landing):
             assert t["payment_id"] not in delivered
     ids = [row["delivery_id"] for row in deliveries]
     assert len(ids) == len(set(ids))
+    counts = Counter(ids)
+    for p in booked(10):
+        for row in p["deliveries"]:
+            assert counts[row["delivery_id"]] == 1, row["delivery_id"]   # every delivery lands in exactly one file
 
 
 def test_lookback_is_enough():
