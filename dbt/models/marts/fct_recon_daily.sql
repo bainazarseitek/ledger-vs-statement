@@ -173,6 +173,22 @@ fees_daily as (
 
 ),
 
+-- Absolute amounts, so offsetting breaks cannot cancel. date_mismatch is
+-- counted but not summed: its amount is a whole payment on the wrong day,
+-- not money lost.
+exceptions_daily as (
+
+    select
+        e.mid,
+        e.currency,
+        e.cause_date as day,
+        count(*) as exception_count,
+        sum(if(e.cause != 'date_mismatch', abs(e.amount_minor), 0)) as exception_abs_minor
+    from {{ ref('fct_recon_exceptions') }} as e
+    group by e.mid, e.currency, e.cause_date
+
+),
+
 daily as (
 
     select
@@ -194,6 +210,8 @@ daily as (
         coalesce(sd.statement_net_minor, 0) as statement_net_minor,
         coalesce(fd.expected_fee_minor, 0) as expected_fee_minor,
         coalesce(fd.fee_variance_minor, 0) as fee_variance_minor,
+        coalesce(ed.exception_count, 0) as exception_count,
+        coalesce(ed.exception_abs_minor, 0) as exception_abs_minor,
         cu.minor_per_major,
         fx.units_per_usd,
         fx.rate_date as fx_rate_date,
@@ -215,6 +233,10 @@ daily as (
         on p.mid = fd.mid
         and p.currency = fd.currency
         and p.recon_date = fd.day
+    left join exceptions_daily as ed
+        on p.mid = ed.mid
+        and p.currency = ed.currency
+        and p.recon_date = ed.day
     left join {{ ref('currencies') }} as cu
         on p.currency = cu.currency
     left join {{ ref('int_fx__usd_rates_daily') }} as fx
@@ -264,6 +286,8 @@ select
     b.statement_net_minor,
     b.expected_fee_minor,
     b.fee_variance_minor,
+    b.exception_count,
+    b.exception_abs_minor,
     b.units_per_usd,
     b.fx_rate_date,
     b.fx_carry_days,

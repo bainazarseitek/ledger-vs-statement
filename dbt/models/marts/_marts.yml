@@ -89,6 +89,51 @@ models:
       - name: is_exception
         description: "Any exception cause applies. Never NULL."
 
+  - name: fct_recon_exceptions
+    description: "One row per payment_id and cause: the analyst work queue, with a signed amount, the day the cause is reported on, an age, evidence ids and the next action. No before_scope lines. A view. SYNTHETIC."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [payment_id, cause]
+    columns:
+      - name: payment_id
+        description: "The line."
+      - name: cause
+        description: "One of the five exception codes."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('reason_codes')
+                field: code
+      - name: mid
+        description: "Merchant account."
+      - name: currency
+        description: "Currency of amount_minor."
+      - name: amount_minor
+        description: "Signed, in minor units (INT64). Positive means the ledger has more, or the PSP overcharged."
+        data_tests:
+          - not_null
+      - name: cause_date
+        description: "The day the cause is reported on: booking_date for missing_in_statement, accounting_date for the other four causes."
+      - name: recon_date
+        description: "The line's own day."
+      - name: booking_date
+        description: "Ledger side."
+      - name: accounting_date
+        description: "Statement side."
+      - name: age_days
+        description: "DATE_DIFF(as_of_date, recon_date, DAY)."
+      - name: event_id
+        description: "Evidence: the webhook event."
+      - name: line_id
+        description: "Evidence: the statement line."
+      - name: statement_id
+        description: "Evidence: the statement file."
+      - name: analyst_action
+        description: "From reason_codes.csv."
+      - name: as_of_date
+        description: "As of which loaded day."
+
   - name: fct_recon_daily
     description: "One row per MID, currency and day: booked gross vs statement gross, the gap split into dated reason components, and unexplained_minor, which must be 0. Payments SYNTHETIC; USD columns use REAL NBK rates."
     config:
@@ -172,6 +217,12 @@ models:
       - name: fee_variance_minor
         data_type: int64
         description: "SUM(fee_variance_minor) of the same lines."
+      - name: exception_count
+        data_type: int64
+        description: "Rows of fct_recon_exceptions by cause_date, all five causes."
+      - name: exception_abs_minor
+        data_type: int64
+        description: "SUM(ABS(amount_minor)) of fct_recon_exceptions by cause_date, over missing_in_statement, missing_in_ledger, amount_mismatch and fee_mismatch. Absolute values, so offsetting breaks cannot cancel. date_mismatch is counted in exception_count but not summed here: its amount is a whole payment on the wrong day, not money lost."
       - name: units_per_usd
         data_type: numeric
         description: "Rate for recon_date and currency, from int_fx__usd_rates_daily. NULL before the first fetched rate. REAL."
