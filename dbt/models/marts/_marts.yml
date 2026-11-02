@@ -1,0 +1,90 @@
+version: 2
+
+models:
+  - name: fct_recon_lines
+    description: "One row per payment_id seen in the ledger, the statement, or both: exactly one match status judged against as_of_date, the date shift, the amount and integer fee checks, and one primary reason. SYNTHETIC."
+    columns:
+      - name: payment_id
+        description: "PSP reference. Primary key. Taken from whichever side exists."
+        data_tests:
+          - unique
+          - not_null
+      - name: mid
+        description: "Merchant account, from whichever side exists."
+      - name: currency
+        description: "Settlement currency. The same on both sides in v1.0."
+      - name: has_ledger
+        description: "The ledger has a capture for this payment."
+      - name: has_statement
+        description: "A SALE statement line exists for this payment."
+      - name: event_id
+        description: "Ledger side. NULL without a ledger side."
+      - name: copies_received
+        description: "Ledger side: deliveries received for the capture event."
+      - name: event_ts
+        description: "Ledger side: capture time, UTC."
+      - name: booking_date
+        description: "Ledger side: our revenue day."
+      - name: ledger_amount_minor
+        description: "Ledger side: booked amount in minor units (INT64)."
+      - name: expected_accounting_date
+        description: "Ledger side: the day the MID's cut-off predicts the PSP will book the sale."
+      - name: due_date
+        description: "Ledger side: from this day on (inclusive) a ledger-only line is missing."
+      - name: line_id
+        description: "Statement side. NULL without a statement side."
+      - name: statement_id
+        description: "Statement side: the file."
+      - name: captured_ts
+        description: "Statement side: the PSP's capture time, UTC."
+      - name: accounting_date
+        description: "Statement side: the PSP's day for the sale."
+      - name: statement_arrival_date
+        description: "Statement side: the arrival day of the statement file."
+      - name: statement_gross_minor
+        description: "Statement side: gross in minor units (INT64)."
+      - name: statement_fee_minor
+        description: "Statement side: fee charged in minor units (INT64)."
+      - name: statement_net_minor
+        description: "Statement side: net in minor units (INT64)."
+      - name: recon_date
+        description: "The line's own day: COALESCE(booking_date, DATE(captured_ts)). Never NULL. Partition column."
+        data_tests:
+          - not_null
+      - name: scope_start
+        description: "From stg_recon__as_of: the oldest loaded arrival day."
+      - name: as_of_date
+        description: "From stg_recon__as_of. Every status is judged against it."
+        data_tests:
+          - not_null
+      - name: match_status
+        description: "Exactly one of matched, before_scope, in_transit, missing_in_statement, missing_in_ledger."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["matched", "before_scope", "in_transit", "missing_in_statement", "missing_in_ledger"]
+      - name: date_shift
+        description: "Matched lines: none, timing_cutoff or date_mismatch. NULL for one-sided lines."
+      - name: amount_diff_minor
+        description: "Matched lines: ledger amount minus statement gross. NULL otherwise."
+      - name: is_amount_mismatch
+        description: "Matched and amount_diff_minor != 0. The gross tolerance is exactly 0. Never NULL."
+      - name: expected_fee_minor
+        description: "Lines with a statement side: the contracted fee, DIV(gross * fee_bps + 5000, 10000) + fee_fixed_minor."
+      - name: fee_tolerance_minor
+        description: "Lines with a statement side: GREATEST(fee_tol_min_minor, DIV(gross * fee_tol_bps + 9999, 10000))."
+      - name: fee_variance_minor
+        description: "Lines with a statement side: charged fee minus expected fee."
+      - name: is_fee_mismatch
+        description: "ABS(fee_variance_minor) > fee_tolerance_minor. A variance equal to the tolerance is within it. Never NULL. Always false for before_scope lines."
+      - name: primary_reason
+        description: "One reason code per line, by the precedence in reason_codes."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('reason_codes')
+                field: code
+      - name: is_exception
+        description: "Any exception cause applies. Never NULL."

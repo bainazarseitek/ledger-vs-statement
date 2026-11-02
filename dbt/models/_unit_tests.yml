@@ -31,3 +31,40 @@ unit_tests:
         - {payment_id: pay_u1, booking_date: "2026-10-21", expected_accounting_date: "2026-10-20", due_date: "2026-10-23"}
         - {payment_id: pay_u2, booking_date: "2026-10-21", expected_accounting_date: "2026-10-21", due_date: "2026-10-24"}
         - {payment_id: pay_u3, booking_date: "2026-10-21", expected_accounting_date: "2026-10-20", due_date: "2026-10-23"}
+
+  - name: ut_lines_status_and_date_shift
+    description: "One status per line against as_of_date, the inclusive due date, both date shifts, a statement-only line in and before scope, and the integer fee check."
+    model: fct_recon_lines
+    given:
+      - input: ref('stg_recon__as_of')
+        format: dict
+        rows:
+          - {as_of_date: "2026-10-28", scope_start: "2026-10-20"}
+      - input: ref('mids')
+        format: dict
+        rows:
+          - {mid: mid_usd_01, psp: psp_alpha, currency: USD, statement_utc_offset_hours: -5, max_settlement_lag_days: 2, fee_bps: 290, fee_fixed_minor: 30, fee_tol_bps: 10, fee_tol_min_minor: 5}
+          - {mid: mid_kzt_01, psp: psp_alpha, currency: KZT, statement_utc_offset_hours: 5, max_settlement_lag_days: 2, fee_bps: 250, fee_fixed_minor: 0, fee_tol_bps: 10, fee_tol_min_minor: 500}
+      - input: ref('int_ledger__captures')
+        format: dict
+        rows:
+          - {payment_id: pay_a, event_id: evt_a, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-26 10:00:00", booking_date: "2026-10-26", expected_accounting_date: "2026-10-26", due_date: "2026-10-29"}
+          - {payment_id: pay_b, event_id: evt_b, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-25 10:00:00", booking_date: "2026-10-25", expected_accounting_date: "2026-10-25", due_date: "2026-10-28"}
+          - {payment_id: pay_c, event_id: evt_c, mid: mid_kzt_01, currency: KZT, amount_minor: 999000, event_ts: "2026-10-26 20:00:00", booking_date: "2026-10-26", expected_accounting_date: "2026-10-27", due_date: "2026-10-30"}
+          - {payment_id: pay_d, event_id: evt_d, mid: mid_usd_01, currency: USD, amount_minor: 1999, event_ts: "2026-10-26 12:00:00", booking_date: "2026-10-26", expected_accounting_date: "2026-10-26", due_date: "2026-10-29"}
+      - input: ref('stg_psp__settlement_lines')
+        format: dict
+        rows:
+          - {line_id: ln_c, statement_id: stmt_mid_kzt_01_20261028, record_type: SALE, payment_id: pay_c, mid: mid_kzt_01, currency: KZT, captured_ts: "2026-10-26 20:00:00", accounting_date: "2026-10-27", gross_minor: 999000, fee_minor: 24975, net_minor: 974025, statement_arrival_date: "2026-10-28"}
+          - {line_id: ln_d, statement_id: stmt_mid_usd_01_20261028, record_type: SALE, payment_id: pay_d, mid: mid_usd_01, currency: USD, captured_ts: "2026-10-26 12:00:00", accounting_date: "2026-10-27", gross_minor: 1999, fee_minor: 88, net_minor: 1911, statement_arrival_date: "2026-10-28"}
+          - {line_id: ln_e, statement_id: stmt_mid_kzt_01_20261027, record_type: SALE, payment_id: pay_e, mid: mid_kzt_01, currency: KZT, captured_ts: "2026-10-26 10:00:00", accounting_date: "2026-10-26", gross_minor: 999000, fee_minor: 24975, net_minor: 974025, statement_arrival_date: "2026-10-27"}
+          - {line_id: ln_f, statement_id: stmt_mid_usd_01_20261020, record_type: SALE, payment_id: pay_f, mid: mid_usd_01, currency: USD, captured_ts: "2026-10-18 12:00:00", accounting_date: "2026-10-18", gross_minor: 1999, fee_minor: 88, net_minor: 1911, statement_arrival_date: "2026-10-20"}
+    expect:
+      format: dict
+      rows:
+        - {payment_id: pay_a, recon_date: "2026-10-26", match_status: in_transit, date_shift: null, is_amount_mismatch: false, expected_fee_minor: null, fee_tolerance_minor: null, is_fee_mismatch: false, primary_reason: in_transit, is_exception: false}
+        - {payment_id: pay_b, recon_date: "2026-10-25", match_status: missing_in_statement, date_shift: null, is_amount_mismatch: false, expected_fee_minor: null, fee_tolerance_minor: null, is_fee_mismatch: false, primary_reason: missing_in_statement, is_exception: true}
+        - {payment_id: pay_c, recon_date: "2026-10-26", match_status: matched, date_shift: timing_cutoff, is_amount_mismatch: false, expected_fee_minor: 24975, fee_tolerance_minor: 999, is_fee_mismatch: false, primary_reason: timing_cutoff, is_exception: false}
+        - {payment_id: pay_d, recon_date: "2026-10-26", match_status: matched, date_shift: date_mismatch, is_amount_mismatch: false, expected_fee_minor: 88, fee_tolerance_minor: 5, is_fee_mismatch: false, primary_reason: date_mismatch, is_exception: true}
+        - {payment_id: pay_e, recon_date: "2026-10-26", match_status: missing_in_ledger, date_shift: null, is_amount_mismatch: false, expected_fee_minor: 24975, fee_tolerance_minor: 999, is_fee_mismatch: false, primary_reason: missing_in_ledger, is_exception: true}
+        - {payment_id: pay_f, recon_date: "2026-10-18", match_status: before_scope, date_shift: null, is_amount_mismatch: false, expected_fee_minor: 88, fee_tolerance_minor: 5, is_fee_mismatch: false, primary_reason: before_scope, is_exception: false}
