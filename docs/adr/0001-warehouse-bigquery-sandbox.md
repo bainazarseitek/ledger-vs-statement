@@ -2,15 +2,17 @@ Planning document, drafted with AI assistance before the build and reviewed by m
 
 # ADR-0001: Warehouse
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-01
-- **Accept at:** M10, step S10.2. Fill in the G0 results below at step S1.5.
+- **Accepted on:** 2026-11-02
+- **Accept at:** M10, step S10.2. The G0 results below were filled in at step S1.5.
+- **Written by:** an AI agent in build mode (the owner's decision of 2026-11-02 in `AGENTS.md`, heading "Build mode"), checked against the code and `docs/evidence/`. "I" below is the project's voice.
 
 ## Context
 
-1. The project practises BigQuery with Airflow 3 and dbt, on about 0.1 MB a day (design estimate). It must cost $0, never charge automatically, and stay rebuildable by anyone without a card.
-2. The sandbox is a project with no billing account. It refuses DML (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and streaming inserts, and Cloud Storage needs billing. "All tables, views, and partitions automatically expire after 60 days."
-3. Storage is "a lifetime limit of 10 GiB", "not refunded upon data deletion", with undocumented metering. It replaced a monthly limit between the page revisions of 2026-08-26 and 2026-09-04.
+1. I wanted to practise BigQuery with Airflow 3 and dbt on a small daily load, about 0.1 MB a day (a design estimate, not a result). The project must cost $0, must never charge me automatically, and anyone without a card must be able to rebuild it.
+2. The BigQuery sandbox is a project with no billing account. It refuses DML (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and streaming inserts. Cloud Storage needs billing. The sandbox page says: "All tables, views, and partitions automatically expire after 60 days."
+3. Storage is "a lifetime limit of 10 GiB", "not refunded upon data deletion", and Google does not document how it is metered. The page changed from a monthly limit to this lifetime limit between its revisions of 2026-08-26 and 2026-09-04.
 
 ## Options considered
 
@@ -23,18 +25,22 @@ Planning document, drafted with AI assistance before the build and reviewed by m
 | Databricks Free Edition | no card, no end date | unpublished daily limit; deletion after 60 days without login; terms bar publishing benchmarks; not BigQuery | Rejected |
 | DuckDB on the laptop | $0, offline | not a cloud warehouse | Rejected |
 
+I chose the sandbox because it is the only option that is real BigQuery, needs no card and cannot bill me. The price is that the whole design must work without DML. The trials either end, delete data or are not BigQuery, so they are not fallbacks for this project.
+
 ## Decision
 
-1. The BigQuery sandbox is the only warehouse: a personal Google account with "No organization" (never a university account), one project with display name `ledger-vs-statement`, no billing account. The project id lives only in `.env` (`GCP_PROJECT`).
-2. All datasets in `US`: `raw`, `raw_dev`, `analytics`, `analytics_dev`, `probe`.
-3. No DML, no `insert_all` or `insert_rows_json`, no Cloud Storage: load jobs (ADR-0002), views and small tables (ADR-0008).
-4. `maximum_bytes_billed: 1000000000` in the dbt profile and every Python query. Every byte written counts: a 1 GiB self-cap until U3 adds an 8 GiB stop.
-5. Never a second sandbox project to reset the quota: the Google Cloud Terms forbid it.
-6. Plan B, the GCP Free Trial, has two triggers only: P3 and the shard-table fallback both fail, or a storage-quota error appears. Its steps and stop rules (a new project, stop on a prepayment or a refused card, never Activate or Upgrade) are under "Plan B: the GCP Free Trial" in `docs/specs/bigquery_sandbox_and_costs.md`. Record "Plan B in use since [date] because [trigger]" here. If sign-up is blocked, record what the screen said and stop: Snowflake and Databricks are never fallbacks.
+1. The BigQuery sandbox is my only warehouse. It runs under a personal Google account with "No organization" (never a university account), in one project with display name `ledger-vs-statement` and no billing account.
+2. The project id lives only in `.env`, as `GCP_PROJECT`. Code reads it from that variable, and every saved file writes `<project>` instead. On 2026-11-01 I kept the project id that the console proposed, so it is the same string as the repo name. It is deliberately not on the private banned-word list: the repo name is written all over the repo, so listing it would block every push. The rule ("never write the id"), the environment variable and the `redact` functions in `scripts/g0_probe.py` and `scripts/storage.py` guard it, not the pre-push hook. One side effect: `redact` also replaces the repo name with `<project>` wherever it appears in saved probe output.
+3. All datasets are in `US`: `raw`, `raw_dev`, `analytics`, `analytics_dev` and `probe`.
+4. No DML, no `insert_all` or `insert_rows_json`, and no Cloud Storage. Data goes in only through load jobs (ADR-0002), and dbt builds only views and small tables (ADR-0008).
+5. `maximum_bytes_billed: 1000000000` is set in `dbt/profiles.yml` for both targets, and `src/recon/bq.py` sets the same cap on every Python query. I treat every byte written as counted: my own cap is 1 GiB written until U3 adds a bytes-written ledger with an 8 GiB stop.
+6. Never a second sandbox project to reset the quota: the Google Cloud Terms forbid it.
+7. Plan B is the GCP Free Trial. It has two triggers only: probe P3 and the shard-table fallback both fail, or a storage-quota error appears. Its steps and stop rules (a new project, stop on a prepayment or a refused card, never Activate or Upgrade) are under "Plan B: the GCP Free Trial" in `docs/specs/bigquery_sandbox_and_costs.md`. If sign-up is blocked, I record what the screen said and stop: Snowflake and Databricks are never fallbacks.
+8. Plan B is not in use (`"plan_b": false` in `docs/evidence/2026-11-01/g0_probe.json`). P3 passed, so the first trigger never fired, and `docs/failure_log.md` holds no storage-quota error, so the second one has not fired either.
 
 ### G0 results
 
-Fill in from `scripts/g0_probe.py` by Sunday 12:00 (hard stop 13:00). Never paste the project id or a job id. Code, fallbacks and decision rules: "G0 probes runbook" and "Decision rules at G0" in `docs/specs/bigquery_sandbox_and_costs.md`.
+From `scripts/g0_probe.py` (`make probe`), saved in `docs/evidence/2026-11-01/g0_probe.json`. No project id and no job id appear here. Code, fallbacks and decision rules: "G0 probes runbook" and "Decision rules at G0" in `docs/specs/bigquery_sandbox_and_costs.md`.
 
 | Id | Checks | Pass when | Result |
 |---|---|---|---|
@@ -51,20 +57,22 @@ Fill in from `scripts/g0_probe.py` by Sunday 12:00 (hard stop 13:00). Never past
 | F1 | one Frankfurter request | HTTP 200; weekday rows only | PASS |
 | P8 | optional `copy_partitions` model, run twice | "Copying table(s)"; no "merge into" or "insert into" | not run |
 
-- P2 error text, verbatim from your own run (first line; the job id on a later line is left out): `403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled, message: Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.`
+- P2 error text, verbatim from my run (first line; the job id on a later line is left out): `403 Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.; reason: billingNotEnabled, message: Billing has not been enabled for this project. Enable billing at https://console.cloud.google.com/billing. DML queries are not allowed in the free tier. Set up a billing account to remove this restriction.`
 - Write path: decorator loads. Authentication: service-account key.
 - Notes: empty-day rule (P5) partition delete; storage source (P7) `__TABLES__`; FX fetch (F1) live task.
 - Probes run at: 2026-11-01 15:03 UTC
 
+What the probes told me: the refusal in P2 is the reason the design has no DML at all. P3, P4 and P5 together are the reason the raw write path in ADR-0002 works: a `WRITE_TRUNCATE` load into one partition replaces only that day, a row for another day is refused, and an empty day is handled by deleting the partition. P7 means I can read stored bytes from `__TABLES__`, but not the lifetime counter.
+
 ## Consequences
 
-**Cost.** $0 with no card; under 0.25 GiB written in v1.0 (design estimate); bytes are never a reported result.
+**Cost.** $0, with no card. On 2026-11-02, `make storage` read 5600870 logical bytes stored across the five datasets through `__TABLES__` (`docs/evidence/2026-11-02/storage.json`). That file says it is a lower bound, because the lifetime quota may count every byte ever written. Bytes are never a headline result.
 
-**Better.** Real BigQuery practice in a repo anyone can rebuild; the limits become the README heading "Platform constraints (G0 probes)".
+**Better.** I practise on real BigQuery in a repo that anyone can rebuild without a card. The platform limits are written down in the README heading "Platform constraints (G0 probes)".
 
-**Worse.** No `MERGE` or snapshots; a date outside the window loses its rows silently (ADR-0009); the storage counter cannot be read.
+**Worse.** No `MERGE` and no snapshots. A date outside the window loses its rows silently (ADR-0009). I cannot read the storage counter that the quota uses: `INFORMATION_SCHEMA.TABLE_STORAGE` is not enabled for the project (P7, and again in `storage.json`).
 
-**Revisit when.** A Plan B trigger fires; the U3 ledger hits its 8 GiB stop, or a Google change stops load jobs or DDL (not triggers: stop writes and decide here, because the trial is once only); a version must run `MERGE` or snapshots (the v3 trial).
+**Revisit when.** A Plan B trigger fires. Or the U3 ledger hits its 8 GiB stop, or a Google change stops load jobs or DDL: these are not Plan B triggers, so I stop writing and decide here, because the trial can be used only once. Or a version must run `MERGE` or snapshots.
 
 ## Sources (checked 2026-11-01)
 
