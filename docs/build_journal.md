@@ -2151,4 +2151,357 @@ Per-test failure row counts were left out, because they are not saved in `docs/e
 
 Each step had a spec reviewer and a hard-rules reviewer, and every finding two skeptics. S7.2, S7.4 and S7.5 had no findings. In S7.3 three were confirmed, all about records, not code: the contract had already been enforced in S5.6 (`6c97a10`, before `g1-freeze`, so history is not rewritten), there was no S7.3 commit, and the deliberate failure test had no record. The fixer re-ran the failure test (`unexplained_minor | INT64 | STRING | data type mismatch`, `ERROR=1`, then `git restore` and a clean `git status --short dbt/`) and recorded the check in the empty commit `c6cba6c`. `docs/testing.md` gave the Astana date for the mutation run; a dated correction with the UTC date was appended (`4377cb9`).
 
-**Next step:** S7.6, rebuild the latest marts with the final dbt code.
+## S7.6: rebuild the latest marts with the final dbt code
+
+**Date and commit:** 2026-11-02, no commit. The plan's "Commit: none" applies, because no file changes.
+
+**What was built:**
+- No code and no files. The `dbt_build` task of the existing run for 2026-11-01 was cleared, so the marts in `analytics` were rebuilt by the final dbt code (last changed in `e2e919d`, S7.4).
+
+**How it works:**
+The overnight history runs used the dbt code from before S7.2. The rerun proof must compare the output of one frozen code version, so the latest marts had to be rebuilt by the final code first. Clearing resets task instances of a run that already exists. The scheduler then runs them again with the same data interval. `-t` is a regular expression on task ids:
+
+`docs/specs/airflow_and_docker.md:1028`
+```text
+- `-t` is a regular expression on task ids. `-t load_raw` clears all three mapped loads. `-t dbt_build` matches only `dbt_build` in this DAG.
+```
+
+The task writes its dbt artifacts to a folder named after the run's logical date. That is why `runs/dbt/2026-11-01/target/run_results.json` is the file to check:
+
+`dags/recon_daily.py:32`
+```python
+    "--target-path /opt/airflow/runs/dbt/{{ data_interval_start | ds }}/target "
+```
+
+The DAG excludes unit tests, so the build re-runs every model and data test on `analytics` and no unit test:
+
+`dags/recon_daily.py:31`
+```python
+    "--exclude-resource-type unit_test "
+```
+
+This follows S7.6 in `docs/build_plan.md`, "Clear and rerun a day" in the "Operations runbook" of `docs/specs/airflow_and_docker.md`, and ADR-0005. The rejected alternatives are these:
+- Clearing every task of the day. That would also regenerate and reload raw data, which this step does not need.
+- `airflow dags trigger`. It takes its interval from the trigger time, not from 2026-11-01.
+- A host build. It targets `analytics_dev`, not the proof dataset.
+
+**Commands and output:**
+- `airflow dags list-runs recon_daily --state running` and `--state queued`: both `No data found`.
+- `docker compose exec airflow-scheduler airflow tasks clear recon_daily -s 2026-11-01 -e 2026-11-01 -t dbt_build -y`, at 19:48:42 UTC.
+- `dbt_build` for 2026-11-01: `success`, 19:48:42 to 19:49:49 UTC.
+- `runs/dbt/2026-11-01/target/run_results.json` was rewritten and shows a fresh time. Its results: 42 `pass`, 12 `success`. `assert_recon_decomposition_closes`: `pass`.
+- From here until the proof is committed, nothing under `dbt/` changes (`AGENTS.md`, "Freeze rules", rule 2).
+
+**What went wrong:** Nothing, so there is no failure-log entry. No test that was green on the host turned red in Airflow, so `analytics` and `analytics_dev` showed no difference.
+
+**Interview questions:**
+1. *Why clear only `dbt_build` and not the whole run?*
+   The raw partitions for 2026-11-01 were already loaded by frozen loader code. Only the dbt code had changed since the overnight runs. Clearing `dbt_build` rebuilds the marts with the final SQL and leaves raw untouched.
+2. *Clearing reruns a task inside an existing run. How is that different from reprocess?*
+   A reprocess (`backfill create --reprocess-behavior completed`) creates backfill runs for a range of finished logical dates. A clear resets task instances of one run that already exists. Both keep the run's data interval, so both process the same day.
+
+## S8.1: `scripts/prove_idempotency.py`
+
+**Date and commit:** 2026-11-02, `d3042f1`.
+
+**What was built:**
+- `scripts/prove_idempotency.py` has three functions:
+  - `fingerprints` runs the fingerprint query for one table.
+  - `snapshot` fingerprints the three raw tables by `_arrival_date` and the two mart tables by `recon_date`, records `as_of_date`, and writes one JSON file.
+  - `compare` compares two snapshots, writes `compare.json`, prints one summary line and returns the exit code.
+- `Makefile`: the targets `reprocess`, `clear-day`, `snapshot` and `compare`. The same commit also added `results`, `storage` and `fx-report`, whose scripts came in S9.1 and S9.2.
+
+**How it works:**
+A fingerprint is a short value that changes when any row changes. For each (table, partition) group, the query hashes every whole row and combines the hashes in two ways. It also keeps the row count:
+
+`scripts/prove_idempotency.py:20`
+```python
+       bit_xor(farm_fingerprint(to_json_string(t))) as xor_fp,
+```
+
+`scripts/prove_idempotency.py:21`
+```python
+       sum(cast(farm_fingerprint(to_json_string(t)) as bignumeric)) as sum_fp
+```
+
+`BIT_XOR` alone cancels identical pairs, so a duplicated row pair would vanish. That is why `COUNT` and the `SUM` are kept too. The `SUM` is cast to BIGNUMERIC so it cannot overflow INT64, and it is stored as text so the JSON keeps every digit. The snapshot also reads the marts' `as_of_date`:
+
+`scripts/prove_idempotency.py:51`
+```python
+    as_of = rows(query(client, f"select as_of_date from `{client.project}.{args.marts_dataset}.stg_recon__as_of`",
+```
+
+`compare` passes only when nothing changed, nothing is missing, nothing is new and `as_of` is the same:
+
+`scripts/prove_idempotency.py:72`
+```python
+    ok = not changed and not only_before and not only_after and as_of_same
+```
+
+Tables are written as `<dataset>.<table>`, so the JSON never holds the project id. The defaults are `raw` and `analytics`, and so is the Makefile's `RAW_DS ?= raw`, even though the Makefile sets `RAW_DATASET := raw_dev` for development commands. The reprocess target is a single backfill command:
+
+`Makefile:84`
+```makefile
+	$(AIRFLOW) backfill create --dag-id recon_daily --from-date $(FROM) --to-date $(TO) --reprocess-behavior completed --max-active-runs 1
+```
+
+This follows S8.1 in `docs/build_plan.md`, "The idempotency proof" in `docs/specs/airflow_and_docker.md` and "The fingerprint proof" in `docs/learning/concepts.md`. The rejected alternatives are these:
+- Comparing row counts only. A changed value with the same count would pass.
+- `BIT_XOR` alone, which cancels identical pairs.
+- Excluding columns from the hash. None needs it, because there is no wall-clock column and `fetched_at` comes from the frozen meta file.
+
+**Commands and output:**
+- ruff reported an unused `noqa` comment, and it was removed before the commit.
+- The test run: two snapshots of 2026-10-28 to 2026-11-01, one after the other, written to `$TMPDIR`. Each printed `25 (table, partition) groups, 3063 rows, as_of 2026-11-01`.
+- `compare` on the two test snapshots:
+  ```text
+  25 of 25 (table, partition) groups identical, 3063 rows, as_of 2026-11-01 in both
+  ```
+  `exit=0`.
+- A grep for the project id in the JSON files: 0 matches.
+
+**What went wrong:** No bug, so there is no failure-log entry. The ruff note was a lint fix, not a bug.
+
+**Interview questions:**
+1. *Why keep three numbers per partition instead of one hash?*
+   `BIT_XOR` does not depend on row order, but two identical rows XOR to 0, so a duplicated pair would leave it unchanged. `COUNT` catches the extra rows, and the BIGNUMERIC `SUM` of the same hashes catches a different multiset of rows that XORs the same. All three must match.
+2. *Why does `compare` fail on a missing or a new group, not only on a changed one?*
+   A partition that disappeared or appeared means the rerun wrote somewhere else or dropped a day. Counting only changed groups among the shared keys would report that as identical.
+
+## S8.2: run the proof
+
+**Date and commit:** 2026-11-02, `ae8e1a2` (the three evidence files).
+
+**What was built:**
+- `docs/evidence/2026-11-02/fp_before.json`, `fp_after.json` and `compare.json`, all written by `make` targets. No code changed.
+
+**How it works:**
+The proof measures N1. A snapshot is taken first. Then the 7 latest finished days are reprocessed, and one older day, 2026-10-14, is cleared out of order. Then a second snapshot is taken and the two are compared. Every raw write is one WRITE_TRUNCATE load into one partition, so a rerun replaces the day instead of appending to it:
+
+`src/recon/load.py:133`
+```python
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+```
+
+The out-of-order clear can only pass because `as_of_date` comes from the loaded data, not from the run date. When run 2026-10-14 rebuilds the marts, it still sees 2026-11-01 as the latest arrival day:
+
+`dbt/models/staging/stg_recon__as_of.sql:32`
+```sql
+    max(a._arrival_date) as as_of_date,
+```
+
+The snapshot range starts on 2026-10-03, one day before the world start, because USD accounting dates can fall there. This follows S8.2 in `docs/build_plan.md`, "The idempotency proof" in `docs/specs/airflow_and_docker.md`, and ADR-0002. That ADR rejects `WRITE_APPEND` plus dedup views ("each rerun adds a copy") and `as_of` from a `run_date` var or `CURRENT_DATE()` ("reruns roll the marts back, or differ").
+
+**Commands and output:**
+- Frozen code:
+  - The M9 scripts were committed first (`9b3fabd`, `8441208`). After that, `git status` showed only `.vscode/`, the owner's untracked editor folder.
+  - `git diff --stat g1-freeze` over the frozen paths and `dags/` printed nothing.
+- Nothing running: no run active, run 2026-11-01 `success`, DAG unpaused.
+- `make snapshot OUT=docs/evidence/2026-11-02/fp_before.json FROM=2026-10-03 TO=2026-11-01`:
+  ```text
+  146 (table, partition) groups, 17595 rows, as_of 2026-11-01
+  ```
+- The dry run of the reprocess listed 7 dates.
+- `make reprocess FROM=2026-10-26 TO=2026-11-01`: 7 runs created at 19:50:50 UTC. All 7 ended `success`, and the last ended at 20:00:17 UTC.
+- `make clear-day DAY=2026-10-14`: every task re-ran, 20:00:55 to 20:02:28 UTC, `success`.
+- `make snapshot OUT=docs/evidence/2026-11-02/fp_after.json FROM=2026-10-03 TO=2026-11-01`:
+  ```text
+  146 (table, partition) groups, 17595 rows, as_of 2026-11-01
+  ```
+- `make compare BEFORE=docs/evidence/2026-11-02/fp_before.json AFTER=docs/evidence/2026-11-02/fp_after.json`:
+  ```text
+  146 of 146 (table, partition) groups identical, 17595 rows, as_of 2026-11-01 in both
+  ```
+  Exit 0. `compare.json` has `"identical": true` and `"changed": []`.
+- A grep for the project id in the three files: 0 matches.
+
+**What went wrong:** Nothing. The compare exited 0, so there is no failure-log entry. One small procedure note: the plan's step 1 asks for an empty `git status --short`, and it showed `.vscode/`. That folder is untracked, is not code that the runs execute, and was left alone. All of the proof ran inside UTC day 2026-11-02.
+
+**Interview questions:**
+1. *Why clear an older day out of order, on top of the reprocess?*
+   A reprocess in date order could hide a bug where a run's output depends on which runs came before it. Clearing 2026-10-14 after 2026-11-01 has run proves that an old day rerun late writes the same raw partitions and leaves the marts' `as_of_date` at 2026-11-01.
+2. *What would you do if one group had changed?*
+   Treat it as a finding: write it in `docs/failure_log.md` and find the cause in code or procedure. Then fix it and run the whole procedure again from a new `fp_before.json`. Never edit evidence or narrow the snapshot range.
+
+## S9.1: `scripts/results.py` and `scripts/storage.py`
+
+**Date and commit:** 2026-11-02, `9b3fabd` (code) and `09a2585` (evidence).
+
+**What was built:**
+- `scripts/results.py` writes `docs/evidence/<UTC date>/summary.json`. It has three parts:
+  - `N2_SQL` is the N2 query on `<marts>.fct_recon_daily`.
+  - `mutation_counts` counts K from the table in `docs/testing.md`.
+  - `decomposition_status` reads the status of `assert_recon_decomposition_closes` from a dbt `run_results.json`.
+  
+  `main` also reads N1 from `compare.json` and N3 from `fx_report.json` when that file exists.
+- `scripts/storage.py`: `from_tables` (`__TABLES__`), `from_api` (the P7 fallback), `table_storage` (`INFORMATION_SCHEMA.TABLE_STORAGE`) and `redact`. It writes `storage.json`.
+
+**How it works:**
+The N2 claim is allowed only when U is 0 and the latest DAG build's identity test passed:
+
+`scripts/results.py:65`
+```python
+          "claim_allowed": n2_row["abs_unexplained_minor"] == 0 and status == "pass"}
+```
+
+By default the test status comes from the newest DAG artifact. After S8.2, that is the cleared run for 2026-10-14, which built the current marts:
+
+`scripts/results.py:39`
+```python
+    path = run_results or max(glob.glob("runs/dbt/*/target/run_results.json"), key=os.path.getmtime)
+```
+
+The project id is replaced before the file is written:
+
+`scripts/results.py:87`
+```python
+    out.write_text(re.sub(re.escape(client.project), "<project>", json.dumps(doc, indent=2, sort_keys=True)) + "\n")
+```
+
+The summary also records the seed, the world start, the window, `as_of`, `git rev-parse HEAD`, the date, and the labels "N1 and N2 are measured on synthetic payments" and "N3 is measured on real NBK rates". `storage.py` says plainly what its number is:
+
+`scripts/storage.py:11`
+```python
+NOTE = "Bytes stored now. The lifetime quota may count every byte ever written, so this is a lower bound."
+```
+
+This follows S9.1 and the N1 and N2 rows of the M9 table in `docs/build_plan.md`, "Metric definitions" in `docs/learning/concepts.md`, and "Honesty, labels and vocabulary" in `AGENTS.md`. The rejected alternatives are these:
+- Copying numbers into the README by hand.
+- Taking the test status from the host's `dbt/target/run_results.json`, which describes `analytics_dev`, not `analytics`.
+- Reporting bytes as a result.
+
+**Commands and output:**
+- `make storage OUT=docs/evidence/2026-11-02/storage.json`:
+  ```text
+  5600870 logical bytes over 5 datasets (__TABLES__)
+  ```
+  This is stored bytes, never a headline number.
+- `make results`:
+  ```text
+  N1: 146 of 146 (table, partition) groups identical, 17595 rows, as_of 2026-11-01 in both
+  N2: 60 MID-days, 0 minor units unexplained, decomposition pass, mutations 4 of 4 caught
+  ```
+- `summary.json`: `git_sha` `ae8e1a2`. `run_results` is `runs/dbt/2026-10-14/target/run_results.json`, the cleared run, as the plan predicts.
+- A grep for the project id in every evidence file: 0 matches.
+
+**What went wrong:** No bug, so there is no failure-log entry. Two notes for the owner:
+- `git_sha` is `ae8e1a2`, not `9b3fabd`. The script ran after the S8.2 evidence commit. `ae8e1a2` holds `scripts/results.py` unchanged from `9b3fabd`, so the SHA still names the code that ran.
+- The `written_at_utc` of `summary.json` is `2026-11-02 20:04:24+00:00`, after `fx_report.json` was written. That is why it holds N3 as well (see S9.2).
+
+**Interview questions:**
+1. *Why does `results.py` refuse to rely on the zero alone?*
+   U = 0 says the marts' columns add up. It does not say the identity test ran on the build that made them. The claim needs both: the query's 0 and `pass` for `assert_recon_decomposition_closes` in that build's `run_results.json`.
+2. *Why is the byte count never a headline?*
+   At this size the 10 MB minimum per query dominates any cost, and stored bytes say nothing about whether the reconciliation is right. `storage.json` is there to watch the sandbox quota, not to describe the result.
+
+## S9.2: `scripts/fx_report.py` (N3)
+
+**Date and commit:** 2026-11-02, `8441208` (code) and `52c353d` (`fx_report.json` and the 29 NBK RSS files).
+
+**What was built:**
+- `scripts/fx_report.py` has four functions and a `main`:
+  - `fetch_rss` reads the landed XML for one day, or makes one request for it.
+  - `usd_rate` checks the XML and parses the USD rate.
+  - `land` writes the file to a temp name and renames it.
+  - `rss_path` builds the file path.
+  - `main` compares the rates with `units_per_usd` from `<marts>.int_fx__usd_rates_daily` and writes `docs/evidence/<UTC date>/fx_report.json`.
+- 29 real NBK RSS files in `landing/fx/provider=nbk_rss/`, 2026-10-04 to 2026-11-01, committed.
+
+**How it works:**
+The project's daily rate carries the last earlier rate forward over days with no Frankfurter row:
+
+`dbt/models/intermediate/int_fx__usd_rates_daily.sql:51`
+```sql
+        last_value(r.rate ignore nulls) over w as units_per_usd,
+```
+
+The script asks NBK's own feed for each day once, and never for today or a later day:
+
+`scripts/fx_report.py:32`
+```python
+    if d >= today:
+        raise ValueError(f"{d} has not ended in UTC: NBK answers future dates with its latest rate")
+```
+
+The feed must echo the requested date, and the rate is parsed as a `Decimal`, never a float:
+
+`scripts/fx_report.py:49`
+```python
+    if echoed != f"{d:%d.%m.%Y}":
+```
+
+`scripts/fx_report.py:55`
+```python
+            return Decimal((item.findtext("description") or "").strip())   # Decimal, never float
+```
+
+A day with its own Frankfurter row (`carry_days == 0`) must equal NBK exactly, or the script exits 1. Carried days are measured:
+
+`scripts/fx_report.py:93`
+```python
+    own = [x for x in usable if x["carry_days"] == 0]       # a Frankfurter row dated d
+```
+
+This follows S9.2 and the N3 row of the M9 table in `docs/build_plan.md`, the NBK RSS format in `docs/specs/data_and_generator.md`, and ADR-0004. That ADR rejects "Re-fetch every run" (a restated rate breaks reproducibility) and "FLOAT64 rates" (binary rounding). Known trap 5 in `AGENTS.md` (an empty feed after the last published rate) is handled: `usd_rate` returns `None` and the day is listed in `days_without_nbk_rate`.
+
+**Commands and output:**
+- `make fx-report` (exit 0):
+  ```text
+  N3: on 9 of 9 carried days the carry-forward differed from NBK by up to 5.82 KZT per USD (130.0 bps); own-rate days agreed on 20 of 20
+  ```
+- 29 NBK RSS files landed in `landing/fx/provider=nbk_rss/` (2026-10-04 to 2026-11-01) and were committed. `days_without_nbk_rate` is `[]` and `weekday_disagreements` is `[]`.
+- The largest difference is on 2026-10-04: project `441.91` (carried from `rate_date` 2026-10-02), NBK `447.73`.
+- Carried days: 2026-10-04, 10-10, 10-11, 10-17, 10-18, 10-24, 10-25, 10-31 and 11-01. In `fx_report.json` every carried day has `"weekday": false` and every own-rate day has `"weekday": true`.
+- `summary.json` holds N3: `C_carried_days` 9, `W_carried_days_differing` 9, `X_max_abs_diff_kzt` "5.82", `Y_bps` "130.0", `E_agreeing` 20 of `E_own_rate_days` 20.
+
+**What went wrong:** No weekday disagreement, so there is no failure-log entry. One observation from the real data: NBK's weekend rate equals the next Monday's published rate. For example, NBK gives `451.05` for Saturday 2026-10-24, which equals the Frankfurter row of Monday 2026-10-26. The carry-forward instead uses Friday's `447.94`. This is why the carry-forward is a project convention, not NBK's official rate for that day. A wording note for the owner: the plan's N3 sentence says "weekday rates", while the script tests own-rate days (`carry_days == 0`). In this window the two sets are the same.
+
+**Interview questions:**
+1. *Why check that the XML echoes the requested date?*
+   NBK answers a future date with its latest rate instead of an error. Without the echo check, a wrong date could slip in as a valid rate. The script also refuses any day on or after today (UTC) before it sends a request.
+2. *Why is the largest gap on 2026-10-04 and not on a later weekend?*
+   2026-10-04 is a Sunday, and the rate carried there is from Friday 2026-10-02, before the world start. That is allowed, because the FX request for run date R covers R-6 to R. NBK's Sunday rate equals the following Monday's, so the gap holds a whole weekend's move, and this weekend's move was the largest in the window.
+
+## Explain check M7
+
+*What does each mutation prove?* (Observed results from `docs/testing.md`.)
+1. **Mutation 1** changes the FULL OUTER JOIN to an INNER JOIN in `dbt/models/marts/fct_recon_lines.sql`. One-sided lines, a payment in only one ledger, are dropped. `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` and UT2 turned red. So the identity and preservation tests catch lost lines.
+2. **Mutation 2** changes `<` to `<=` in the in-transit rule (`fct_recon_lines.sql:112`). Only UT2 turned red. So the due-date boundary is pinned by a unit test, not by the data: the dev data had no line exactly on its due date.
+3. **Mutation 3** removes the `QUALIFY` in `dbt/models/staging/stg_psp__payment_events.sql`. Four uniqueness tests and both money tests turned red. So redelivered webhooks are caught at every layer.
+4. **Mutation 4** moves the `SALE` filter after the join. A filter on `s.record_type` after a FULL OUTER JOIN drops the ledger-only rows, whose statement side is null. Both money tests and UT2 turned red.
+5. All 4 were caught (`summary.json`: `K_caught` 4, `K_total` 4). Mutation 5 belongs to U1.
+
+*Why is the exception share a warning and the identity an error?*
+- `warn_exception_share_7d` describes the business. Breaks are what the analysts work on, so a high share is news for them, not a broken pipeline. With about 70 KZT payments a day, one break could trip a share-only gate.
+- A non-zero `unexplained_minor` means the pipeline itself lost, duplicated or misdated money, so nothing it built can be trusted. `assert_recon_decomposition_closes` therefore stays at error, with no tolerance (`AGENTS.md`, "Money", rule 8).
+
+## Explain check M8
+
+*What do the fingerprints compare?*
+Each (table, partition) group is compared before and after the reprocess and the out-of-order clear. The groups are:
+- `raw.payment_events`, `raw.settlement_lines` and `raw.fx_rates` by `_arrival_date`;
+- `analytics.fct_recon_lines` and `analytics.fct_recon_daily` by `recon_date`.
+
+For each group the snapshot keeps `COUNT(*)`, and the `BIT_XOR` and BIGNUMERIC `SUM` of `FARM_FINGERPRINT(TO_JSON_STRING(row))` (`scripts/prove_idempotency.py:20` and `:21`). It also keeps the marts' `as_of_date`. On 2026-11-02 all 146 of 146 groups were identical, 17595 rows, `as_of` 2026-11-01 in both (`docs/evidence/2026-11-02/compare.json`).
+
+*What would a `_loaded_at` column do to the proof?*
+It changes on every reload, so every reloaded row would hash differently. Every reprocessed partition would then show as changed, and the proof would fail for a trivial reason. The design has no load-time column: `fetched_at` comes from the frozen meta file, and the review checklist forbids one (`AGENTS.md`, "Review checklist", item 3).
+
+*Why must `as_of` match in both snapshots?*
+The mart statuses depend on `as_of_date`, for example `in_transit` against `due_date`. If a new arrival day were loaded between the snapshots, mart rows would change for a legitimate reason. This could happen if midnight UTC passed and the scheduled run added a day. The same `as_of` proves that both snapshots describe the same state of knowledge. That is why the proof ran inside one UTC day, and why `compare` fails on a changed `as_of` (`scripts/prove_idempotency.py:72`).
+
+## Explain check M9
+
+*Which numbers are synthetic and which are real?*
+- N1 and N2 are measured on synthetic payments. They describe this pipeline's behaviour on generated data, not any business. `summary.json` says so in its `synthetic` field:
+  - N1: 146 of 146 groups identical, 17595 rows.
+  - N2: 60 MID-days with 0 minor units unexplained, mutations 4 of 4 caught.
+- N3 compares two real sources: the carried-forward NBK series via Frankfurter, and NBK's own RSS rates. On 9 of 9 carried days they differed, by up to 5.82 KZT per USD (130.0 bps). The 20 of 20 own-rate days agreed exactly.
+- Stored bytes (`storage.json`) are context, never a result.
+
+*Why is the carry-forward a convention?*
+- The Frankfurter series has no row for weekends, so `int_fx__usd_rates_daily` fills those days with the last earlier rate (`last_value(r.rate ignore nulls)`, line 51). That is the project's reporting rule, not NBK's official rate for that day.
+- NBK publishes its own weekend rate, and in this window it equals the next Monday's published rate. For example, NBK gives `451.05` for Saturday 2026-10-24, the same as Monday 2026-10-26, while the carry-forward gives Friday's `447.94`.
+- The reconciliation never converts currency, so this only affects the USD reporting columns.
+
+**Next step:** S10.1, the README first screen and sections.
