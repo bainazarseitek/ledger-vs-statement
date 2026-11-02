@@ -1337,3 +1337,276 @@ The delete is needed because WRITE_TRUNCATE with zero rows is not run at all. Wi
 Three reviewers compared `src/recon/load.py`, `src/recon/fx.py`, `src/recon/cli.py` and the `Makefile` with the load protocol, the FX landing rules and the host guard. None reported a deviation, so nothing was changed.
 
 **Next step:** S5.1, project config, packages, seeds and sources.
+
+## S5.1: project config, packages, typed seeds and sources
+
+**Date and commit:** 2026-11-02, `81aac5e`. This entry and the four after it were written later on 2026-11-02, after a review found that S5.1 to S5.5 had no journal entries. The outputs of the original runs were not kept, so the outputs below come from `make dbt-unit`, `make dbt-build` and two read-only queries run on 2026-11-02 during that fix, on the same code and the same 7 loaded days.
+
+**What was built:**
+- `dbt/dbt_project.yml`: paths, the `query-comment` with `job-label: true`, the vars, and the materialization per folder.
+- `dbt/packages.yml` and `dbt/package-lock.yml`: `dbt-labs/dbt_utils` 1.4.1, locked by `dbt deps`.
+- `dbt/seeds/currencies.csv` (2 rows), `dbt/seeds/reason_codes.csv` (9 rows) and `dbt/seeds/_seeds.yml`, which types every column of all three seeds (`mids` included).
+- `dbt/models/staging/_sources.yml`: the sources `psp` (`payment_events`, `settlement_lines`) and `fx` (`fx_rates`).
+- `Makefile`: `make setup` now runs `dbt deps`; `make dbt-build` is new.
+
+**How it works:**
+A seed without `column_types` lets dbt infer a type from the CSV, and a number column can come back as FLOAT64. Typing every column stops that at the door ("Money" in `AGENTS.md`, rule 6).
+
+`dbt/seeds/_seeds.yml:11`
+```yaml
+        fee_bps: INT64
+```
+
+The source dataset comes from the environment, so the same project reads `raw_dev` on the host and `raw` in the DAG, with no custom schema.
+
+`dbt/models/staging/_sources.yml:5`
+```yaml
+    schema: "{{ env_var('RAW_DATASET', 'raw') }}"
+```
+
+Staging and intermediate models are views and marts are tables (`dbt/dbt_project.yml:31` to `:37`). Nothing is incremental, so no config can produce DML. `job-label: true` (`dbt/dbt_project.yml:13` to `:14`) puts the dbt query comment on each BigQuery job as labels. The vars at `dbt/dbt_project.yml:19` to `:24` hold the tunables; `as_of_date` is never set there.
+
+`make dbt-build` (`Makefile:62` to `:63`) runs `cd dbt && uv run dbt build --target dev` with `RAW_DATASET=raw_dev` exported at `Makefile:4`. This follows `docs/build_plan.md` "S5.1 Project config, packages, seeds, sources" and `docs/specs/dbt_project.md`. It rejects inferred seed types and a `generate_schema_name` override.
+
+**Commands and output:**
+- `uv run dbt --version`: `installed: 1.12.6`, `bigquery: 1.12.1`.
+- `make dbt-build` (the seed lines):
+  ```text
+  2 of 44 OK loaded seed file analytics_dev.currencies ........................... [INSERT 2 in 6.20s]
+  3 of 44 OK loaded seed file analytics_dev.mids ................................. [INSERT 2 in 7.34s]
+  4 of 44 OK loaded seed file analytics_dev.reason_codes ......................... [INSERT 9 in 7.83s]
+  ```
+  "INSERT 2" is dbt's status text. On BigQuery a seed is written by a load job, not by DML.
+- `dbt/package-lock.yml` is committed (`git ls-files dbt/package-lock.yml` lists it).
+
+**What went wrong:** Nothing. BigQuery accepted the job labels.
+
+**Interview questions:**
+1. *Why give every seed column a type?*
+   dbt infers seed types from the CSV text. A money or fee column could become FLOAT64, and a float on the money path breaks exact integer arithmetic. An explicit `INT64` fixes the type before any model reads it.
+2. *How does one dbt project read `raw_dev` on the host and `raw` in Airflow?*
+   The source schema is `env_var('RAW_DATASET', 'raw')`. The Makefile exports `raw_dev`; the DAG leaves the default `raw`. The output dataset comes from the profile target.
+
+Next step: S5.2.
+
+## S5.2: the four staging models and their generic tests
+
+**Date and commit:** 2026-11-02, `e0c4b23`.
+
+**What was built:**
+- `dbt/models/staging/stg_recon__as_of.sql`: one row with `as_of_date` and `scope_start`, plus the target guards.
+- `dbt/models/staging/stg_psp__payment_events.sql`: the webhook events, deduplicated.
+- `dbt/models/staging/stg_psp__settlement_lines.sql`: the statement lines, not deduplicated.
+- `dbt/models/staging/stg_fx__rates.sql`: one first-seen rate per rate date, cast to NUMERIC.
+- `dbt/models/staging/_staging.yml`: descriptions and tests (`unique`, `not_null`, `accepted_values`, `relationships`, `dbt_utils.expression_is_true`, `dbt_utils.unique_combination_of_columns`, `dbt_utils.accepted_range`).
+
+**How it works:**
+No model may read the wall clock, so "today" is the newest loaded arrival day:
+
+`dbt/models/staging/stg_recon__as_of.sql:32`
+```sql
+    max(a._arrival_date) as as_of_date,
+```
+
+The same file refuses a wrong pairing at compile time: target `dev` must read `raw_dev` (`:8` to `:9`), and target `airflow` must read `raw` and never take the `as_of_date` var (`:2` to `:7`).
+
+Dedup keeps the earliest delivery of each `event_id`, with `delivery_id` as the tie-break so a rerun keeps the same copy. The as-of filter runs in `WHERE`, before the window, so `copies_received` counts every copy loaded up to `as_of_date`:
+
+`dbt/models/staging/stg_psp__payment_events.sql:22`
+```sql
+where e._arrival_date <= a.as_of_date
+qualify row_number() over (
+    partition by e.event_id
+    order by e.delivered_ts, e.delivery_id
+) = 1
+```
+
+Statement lines are not deduplicated on purpose (`stg_psp__settlement_lines.sql:1` to `:3`): a repeated line is a PSP defect and must fail `unique` on `line_id`. FX keeps the exact text and casts it once (`stg_fx__rates.sql:12`, `cast(f.rate_text as numeric) as rate`).
+
+This follows `docs/build_plan.md` "S5.2 The four staging models and their generic tests" and the "Deduplication with QUALIFY" concept. It rejects `SELECT DISTINCT` (redeliveries differ in `delivery_id` and `delivered_ts`) and dedup before the as-of filter.
+
+**Commands and output:**
+- `make dbt-build` (staging part): the 4 views were created and all 15 staging tests passed, for example:
+  ```text
+  13 of 44 PASS unique_stg_psp__payment_events_event_id .......................... [PASS in 2.66s]
+  22 of 44 PASS unique_stg_psp__settlement_lines_line_id ......................... [PASS in 2.55s]
+  ```
+- `stg_recon__as_of` on the 7 loaded days: `as_of_date` 2026-10-31, `scope_start` 2026-10-25.
+
+**What went wrong:** Nothing.
+
+**Interview questions:**
+1. *Why order the dedup by `delivered_ts` and then `delivery_id`?*
+   Two copies can share a `delivered_ts`. Without a unique tie-break, `ROW_NUMBER` may pick a different copy on each run, and a rerun would not be byte-stable.
+2. *Why is `copies_received` correct even though `QUALIFY` drops rows?*
+   Window functions are computed before `QUALIFY` filters, so `COUNT(*) OVER (PARTITION BY event_id)` sees every copy that passed the `WHERE`.
+
+Next step: S5.3.
+
+## S5.3: UT1 first, then `int_ledger__captures`
+
+**Date and commits:** 2026-11-02, `72d7ad3` (UT1 and the naive model), `4c131b9` (the real cut-off logic), `b78f542` (the green hash in the failure log).
+
+**What was built:**
+- `dbt/models/_unit_tests.yml`: UT1 `ut_captures_cutoff_both_directions`, with both direct parents mocked (`stg_psp__payment_events` and the seed `mids`).
+- `dbt/models/intermediate/int_ledger__captures.sql`: one row per captured payment with `booking_date`, `expected_accounting_date` and `due_date`.
+- `dbt/models/intermediate/_intermediate.yml`: its description and tests.
+- `Makefile`: `make dbt-unit` (`Makefile:65` to `:66`).
+- `docs/failure_log.md`: the UT1 row in "Planned red runs (not bugs)".
+
+**How it works:**
+The PSP books a sale on the day of its statement time zone, not on our UTC day. Each MID has a fixed offset (+5 for KZT, -5 for USD), so the expected accounting date is the capture time shifted by that offset:
+
+`dbt/models/intermediate/int_ledger__captures.sql:18`
+```sql
+    date(timestamp_add(e.event_ts, interval m.statement_utc_offset_hours hour)) as expected_accounting_date,
+```
+
+The due date adds the MID's settlement lag and the grace days (`:19` to `:22`). From the due date on (inclusive), a ledger-only line is missing. The `LEFT JOIN` to `mids` (`:24`) keeps a payment with an unknown MID: its dates come out NULL and the `not_null` tests fail, where an inner join would drop it silently.
+
+UT1 has six rows around both cut-offs: KZT at 18:59:59, 19:00:00 and 19:30:00 UTC, and USD at 03:00, 04:59:59 and 05:00:00 UTC (`dbt/models/_unit_tests.yml:14` to `:19`). The first version used the naive rule `date(e.event_ts) as expected_accounting_date` (`72d7ad3`, line 16 of the model), so UT1 had to be red.
+
+This follows `docs/build_plan.md` "S5.3 UT1 first, then `int_ledger__captures`" and the "Cut-off times, time zones and the accounting date" concept.
+
+**Commands and output:**
+- Red run at `72d7ad3`, recorded in `docs/failure_log.md` "Planned red runs (not bugs)": `1 of 1 FAIL 1 int_ledger__captures::ut_captures_cutoff_both_directions`, with `pay_k2`, `pay_k3`, `pay_u1` and `pay_u3` differing in `expected_accounting_date` and `due_date`.
+- Green, rerun on 2026-11-02 with `make dbt-unit`:
+  ```text
+  2 of 2 PASS int_ledger__captures::ut_captures_cutoff_both_directions ........... [PASS in 7.42s]
+  ```
+- `make dbt-build`: `int_ledger__captures` created, its 5 tests passed, ends `Done. PASS=44 WARN=0 ERROR=0`.
+
+**What went wrong:** Nothing unplanned. The red run was planned, so it has a "Planned red runs" row and no failure-log entry.
+
+**Interview questions:**
+1. *A KZT payment at 19:00 UTC on 20 October: which accounting date?*
+   21 October. 19:00 UTC plus 5 hours is midnight in the statement zone, so it falls on the next day. 18:59:59 stays on the 20th.
+2. *What is the difference between UT1 and a data test?*
+   UT1 runs the model's logic on fixed rows chosen to sit on the cut-off edges and compares exact outputs. A data test checks a property of whatever data is loaded, so it would only catch a cut-off bug if the data happened to contain an edge case.
+
+Next step: S5.4.
+
+## S5.4: `int_fx__usd_rates_daily` and the `to_usd` macro
+
+**Date and commit:** 2026-11-02, `bf04a7e`.
+
+**What was built:**
+- `dbt/models/intermediate/int_fx__usd_rates_daily.sql`: one row per (currency, day) from the earliest rate date to `as_of_date`, with `units_per_usd`, `rate_date` and `carry_days`.
+- `dbt/models/intermediate/_intermediate.yml`: its tests (unique (currency, day), `not_null`, and the staleness bound on `carry_days`).
+- `dbt/macros/to_usd.sql`: the one rounding stage for USD reporting columns.
+
+**How it works:**
+A date spine makes one row per calendar day (`int_fx__usd_rates_daily.sql:41`, `generate_date_array(b.first_rate_date, a.as_of_date)`). NBK publishes on weekdays only, so a day without a rate takes the last published one and keeps its date:
+
+`dbt/models/intermediate/int_fx__usd_rates_daily.sql:51`
+```sql
+        last_value(r.rate ignore nulls) over w as units_per_usd,
+        last_value(r.rate_date ignore nulls) over w as rate_date
+```
+
+`carry_days` is `date_diff(c.day, c.rate_date, day)` (`:85`), and its test bounds it by `var('fx_max_carry_days')` (`_intermediate.yml:64` to `:70`), so a long gap in the feed fails the build. USD gets identity rows with `units_per_usd = 1` and `carry_days = 0` (`:65` to `:77`, `:96`). The carry-forward is a project convention, not NBK's official rate for that day.
+
+The macro casts to NUMERIC before any division, so nothing is INT64 / INT64, and rounds once:
+
+`dbt/macros/to_usd.sql:5`
+```sql
+round(cast({{ minor_col }} as numeric) / {{ minor_per_major_col }} / {{ units_per_usd_col }}, 2)
+```
+
+This follows `docs/build_plan.md` "S5.4 `int_fx__usd_rates_daily` and the `to_usd` macro" and the concepts "As-of joins, date spines and carry-forward" and "FX rates, direction, cross rates and the carry-forward". It rejects `POW()` and FLOAT64 rates.
+
+**Commands and output:**
+- `make dbt-build`: the view was created and its 4 tests passed, `carry_days` range test included.
+- Spot check, rerun on 2026-11-02 through `recon.bq` (`select currency, day, rate_date, carry_days, units_per_usd from analytics_dev.int_fx__usd_rates_daily where day between '2026-10-23' and '2026-10-27'`), real NBK rates:
+
+  | currency | day | rate_date | carry_days | units_per_usd |
+  |---|---|---|---|---|
+  | KZT | 2026-10-23 (Fri) | 2026-10-23 | 0 | 447.94 |
+  | KZT | 2026-10-24 (Sat) | 2026-10-23 | 1 | 447.94 |
+  | KZT | 2026-10-25 (Sun) | 2026-10-23 | 2 | 447.94 |
+  | KZT | 2026-10-26 (Mon) | 2026-10-26 | 0 | 451.05 |
+  | USD | each day | the same day | 0 | 1 |
+
+  The Saturday KZT row has Friday's `rate_date` and `carry_days = 1`, as the done-when check asks.
+
+**What went wrong:** Nothing.
+
+**Interview questions:**
+1. *Why keep `rate_date` next to the carried rate?*
+   It shows which published rate a weekend day really used, and `carry_days` is computed from it. Without it a stale rate looks like a fresh one.
+2. *Why cast to NUMERIC before dividing in `to_usd`?*
+   In BigQuery INT64 / INT64 returns FLOAT64. Casting the minor units to NUMERIC first keeps the whole calculation exact, and `ROUND(..., 2)` is the single rounding stage.
+
+Next step: S5.5.
+
+## S5.5: UT2 first, then `fct_recon_lines`
+
+**Date and commits:** 2026-11-02, `8ed9fe6` (UT2, `_marts.yml` and the stub that labels every line `matched`), `74fb5d8` (the real matcher), `4139e6c` (the green hash in the failure log). After review on 2026-11-02, a dated correction was appended to the UT2 red-run row in `docs/failure_log.md`.
+
+**What was built:**
+- `dbt/models/_unit_tests.yml`: UT2 `ut_lines_status_and_date_shift`, with every direct parent mocked: `stg_recon__as_of`, the seed `mids`, `int_ledger__captures` and `stg_psp__settlement_lines` (`:35` to `:70`).
+- `dbt/models/marts/fct_recon_lines.sql`: the matcher, a table partitioned by `recon_date` and clustered by `mid`.
+- `dbt/models/marts/_marts.yml`: its description and column tests (`unique` and `not_null` on `payment_id`; `not_null` on `recon_date`, `as_of_date`, `match_status` and `primary_reason`; `accepted_values` on `match_status`; `relationships` from `primary_reason` to `reason_codes`).
+- `docs/failure_log.md`: the UT2 row in "Planned red runs (not bugs)", and its later correction note.
+
+**How it works:**
+The `SALE` filter sits in a CTE before the join. After the join it would also drop every ledger-only line, whose statement columns are NULL (the trap in `AGENTS.md` "Known traps from the plan review"):
+
+`dbt/models/marts/fct_recon_lines.sql:54`
+```sql
+    where s.record_type = 'SALE'
+```
+
+The join is an equality `FULL OUTER JOIN` on `payment_id`, so lines seen on only one side are kept:
+
+`dbt/models/marts/fct_recon_lines.sql:82`
+```sql
+    full outer join statement as s
+        on l.payment_id = s.payment_id
+```
+
+One `CASE` gives exactly one `match_status` per line, judged against `as_of_date` from the data. The due date is inclusive: `in_transit` only while `as_of_date < due_date`. A one-sided line dated before `scope_start` is `before_scope`:
+
+`dbt/models/marts/fct_recon_lines.sql:109`
+```sql
+        case
+            when t.has_ledger and t.has_statement then 'matched'
+            when t.has_ledger and t.booking_date < t.scope_start then 'before_scope'
+            when t.has_ledger and t.as_of_date < t.due_date then 'in_transit'
+            when t.has_ledger then 'missing_in_statement'
+            when date(t.captured_ts) < t.scope_start then 'before_scope'
+            else 'missing_in_ledger'
+        end as match_status,
+```
+
+`date_shift` (`:117` to `:122`) is `none` when the PSP date equals our booking date, `timing_cutoff` when it equals the MID's expected accounting date, and `date_mismatch` otherwise. The fee check is integer only (`:138` to `:139`): `+ 5000` then `DIV` rounds half up, `+ 9999` then `DIV` is a ceiling. A variance equal to the tolerance is within it (`:151` to `:152`, `>` not `>=`). `primary_reason` (`:190` to `:200`) takes the first true condition in the precedence of `reason_codes.csv`. `is_exception` (`:202` to `:205`) wraps the `date_shift` test in `coalesce(..., false)`, because `FALSE OR NULL` is NULL in BigQuery.
+
+The red stub at `8ed9fe6` wrote `'matched' as match_status` for every row (line 124 of that version) and left the flags and fees empty. UT2's six rows cover each status and both date shifts: `pay_a` in transit, `pay_b` missing on its due date, `pay_c` matched with a cut-off shift, `pay_d` matched with an unexplained date, `pay_e` statement-only in scope, `pay_f` statement-only before scope. Each statement row sets `record_type: SALE` (`_unit_tests.yml:58` to `:61`).
+
+This follows `docs/build_plan.md` "S5.5 UT2 first, then `fct_recon_lines`", `fct_recon_lines` and UT2 in `docs/specs/dbt_project.md`, and the concepts "FULL OUTER JOIN matching", "Line statuses, due dates and scope" and "Minor units and integer fee arithmetic". It rejects an `OR` join condition, a filter after the join, and `ROUND(x * bps / 10000)`.
+
+**Commands and output:**
+- Red run at `8ed9fe6`, recorded in `docs/failure_log.md`: `1 of 2 FAIL 1 fct_recon_lines::ut_lines_status_and_date_shift`. The rows that differed in `match_status` were `pay_a`, `pay_b`, `pay_e` and `pay_f` (see the correction note below that table).
+- Green, rerun on 2026-11-02 with `make dbt-unit`:
+  ```text
+  1 of 2 PASS fct_recon_lines::ut_lines_status_and_date_shift .................... [PASS in 8.26s]
+  2 of 2 PASS int_ledger__captures::ut_captures_cutoff_both_directions ........... [PASS in 7.42s]
+  Done. PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=2
+  ```
+- `make dbt-build`, rerun on 2026-11-02:
+  ```text
+  36 of 44 OK created sql table model analytics_dev.fct_recon_lines .............. [CREATE TABLE (1.6k rows, 432.3 KiB processed) in 5.12s]
+  Done. PASS=44 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=44
+  ```
+- Lines per status and primary reason on the 7 synthetic days (as-of 2026-10-31, scope start 2026-10-25), from a query through `recon.bq`: `matched` 1217 (824 `matched`, 362 `timing_cutoff`, 27 `fee_mismatch`, 4 `amount_mismatch`), `before_scope` 178, `in_transit` 175, `missing_in_ledger` 6, `missing_in_statement` 2. These are outputs of this repo's own dev run on synthetic data, not results; the measured results come later from `docs/evidence/`.
+- `unexplained_minor` does not exist yet: `fct_recon_daily` and its identity test come in S5.6.
+
+**What went wrong:** The red run was planned. Its first record in "Planned red runs (not bugs)" said "every row but `pay_c`" differed in `match_status`; `pay_d` also expects `matched`, so it did not differ. A dated correction was appended below the table. It is a record error, not a code bug, so it has no failure-log entry.
+
+**Interview questions:**
+1. *Why must the `record_type = 'SALE'` filter sit before the join?*
+   After a `FULL OUTER JOIN`, a ledger-only line has NULL statement columns, so `WHERE record_type = 'SALE'` would drop it. Those one-sided lines are exactly the exceptions the matcher exists to find.
+2. *A ledger-only line has `due_date` 2026-10-28 and the as-of date is 2026-10-28. What is its status?*
+   `missing_in_statement`. The due date is inclusive, so `in_transit` only holds while `as_of_date < due_date` (`pay_b` in UT2).
+
+Next step: S5.6, `fct_recon_daily` and the three integrity tests.
