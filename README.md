@@ -1,71 +1,13 @@
 # Two Ledgers (`ledger-vs-statement`)
 
-<!--
-FILL: How to use this skeleton. Delete this comment before publishing.
-
-Markers
-1. A FILL comment (like this one) tells you what to write. GitHub does not render it. Delete each one when its section is true.
-2. [WRITE: ...] marks a sentence or paragraph that you write in your own words.
-3. Value placeholders: [D] [P] [R] [M] [U] [K] [W] [C] [X] [Y] [E] [A] [N] [s] [sha] [date] [first] [last] [result] [status] [observed].
-   Copy values only from files your own run wrote: docs/evidence/2026-11-02/*.json, docs/testing.md and the ADR files.
-   Never estimate, round up, or reuse a number from a planning document.
-
-Rules
-4. A results row with no measured value is deleted, never left as a placeholder.
-5. The tables, lists and commands below were drafted from the plan. Before publishing, check every row against the code. Fix or delete any row that is not true.
-6. Words to use: "learning project", "seeded self-test (synthetic)", "settled amount differs", "three dates (arrival, booking, accounting)", "reprocess", "backfill", "clear", "no DML".
-   Words never to use: "production" (allowed only inside "What this does not prove"), "production-grade", "scalable", "real-time", "accuracy", "precision", "recall", "detection rate", "partial capture", "bitemporal".
-   No em dashes. No word from the private banned-word list.
-7. AI agents: never replace a [WRITE: ...] marker or a value placeholder. You may fix Markdown, links and table syntax when asked.
-
-Cut-order items change these sections (only the items you applied):
-- Item 1, no scripts/fx_report.py: delete row N3, the section "N3: real NBK weekend gap", the "Cross-check" row in "Real exchange rates", and every nbk_rss mention.
-- Item 2, no warn tests: delete warn_exception_share_7d and warn_fx_restated from "Tests and data quality".
-- Item 3, load loop: in "How a run works", load_raw is one task that loops over the 3 tables.
-- Item 4, shorter history: change the dates in "Results and how they were measured" and in "Run it in full".
-- Item 5, no exceptions view: replace fct_recon_exceptions with the saved query dbt/analyses/exceptions_queue.sql in "Data model" and in the diagram.
-- Item 6, no fetch task: in "How a run works", fetch_fx is gone; FX comes from a committed, hand-fetched file in landing/fx/ (still real).
-- Item 7, no fee checks: delete fee_mismatch from "Reason codes" and "Planted defects and benign behaviours", and the fee wording in the data model and tests.
-
-If gate G1 failed (no recon_daily run went green end to end):
-- Add this line under the banner: "Airflow DAG: in progress. The numbers below come from host runs (make days, make dbt-build)."
-- N1 starts "Re-ran [D] days from the command line:" and keeps the rest of its wording.
-
-Before publishing (build plan steps S10.1 and S10.4)
-1. Copy the command in step 3 somewhere outside this file.
-2. Delete every FILL comment, including this one.
-3. Run:  grep -nE '<!--|\[WRITE|\[[A-Za-z]{1,8}\]([^(]|$)' README.md
-   It must print nothing.
-4. Open the README on GitHub in a private window. The diagram renders, and every link and image works.
--->
-
 Does yesterday's revenue match what the payment provider settled, per merchant account? A daily Airflow 3 + dbt pipeline on the BigQuery sandbox that reconciles a synthetic subscription business's revenue ledger with per-MID settlement statements and explains every difference to the minor unit.
 
 Learning project, built 1-2 Nov 2026 · Payments: SYNTHETIC (seeded generator) · FX: REAL (National Bank of Kazakhstan rates via Frankfurter) · BigQuery sandbox, Airflow 3.3.2, dbt-core 1.12.6 · $0
 
-<!--
-FILL: Keep the banner true.
-- If you built on other days, change "built 1-2 Nov 2026".
-- After later tags, write "v1.0 built 1-2 Nov 2026, updated [date]".
-- Add the CI badge in front of the banner only in v1.2 (U2), when CI exists.
--->
+**Problem.** Finance needs one answer every morning: does the revenue booked in the warehouse match what the payment service provider (PSP) settled on each merchant account (MID)? The two ledgers disagree even when nothing is wrong, because the warehouse books revenue from payment webhooks by UTC date, while each MID books the sale on its own accounting date and settles it 1 or 2 days later, with fees taken off. Inside that timing noise hide the real problems: duplicated or lost webhooks, statement lines that never arrive, settled amounts that differ, and fees outside the contract.
 
-<!--
-FILL: Problem, 2-3 sentences, your words, no company names. Define MID (merchant account) and PSP (payment service provider) on first use. Cover:
-1. Who needs the answer: finance, every morning.
-2. Why the two ledgers disagree even when nothing is wrong: the warehouse books revenue from payment webhooks by UTC date, while each MID books the sale on its own accounting date and settles it 1-2 days later, with fees.
-3. The real problems hidden in that noise: duplicated or lost webhooks, statement lines that never arrive, settled amounts that differ, fees outside the contract.
--->
-**Problem.** [WRITE: the problem in 2-3 sentences]
+**What this does.** Each daily Airflow run loads exactly one UTC arrival day into BigQuery, with one load job per table and no DML. dbt then matches every payment to its statement line, gives each line one status and dated reason codes, and fails the run if any MID-day has a single unexplained minor unit.
 
-<!--
-FILL: What this does, 2 sentences, your words. Cover:
-1. Each daily Airflow run loads exactly one arrival day into BigQuery: one load job per table, no DML.
-2. dbt matches every payment to its statement line, gives each line one status and dated reason codes, and fails the run if any MID-day has a single unexplained minor unit.
--->
-**What this does.** [WRITE: 2 sentences]
-
-<!-- FILL: The diagram has 7 boxes (the outer box counts). Keep it at 8 or fewer. Update it if cut-order item 5 or 6 applied. -->
 ```mermaid
 flowchart LR
     subgraph RUN["One Airflow 3 run per UTC arrival day (DAG recon_daily)"]
@@ -78,34 +20,16 @@ flowchart LR
     end
 ```
 
-<!--
-FILL: Results rules. This table is the headline of the repo.
-- Copy every value from docs/evidence/2026-11-02/summary.json (written by make results). The caption values (seed, window, as_of, git SHA) come from the same file.
-- Delete a row if its value was not measured. A published row never holds a placeholder.
-- N1: use it only if make compare exited 0 on the final run. If the final compare was not all identical, show the real counts and link the failure-log entry, or delete the row. Never round up.
-- N2: use it only if [U] is 0 and the latest run's assert_recon_decomposition_closes passed. Keep the mutation sentence only after the mutation check ran. The first [K] is the number of mutations that turned a test red and the second is the number applied, both from docs/testing.md. They are equal only if every mutation went red.
-- N3: delete the row if make fx-report did not run before publishing.
-- The seeded self-test never goes in this table. From v1.1 it has its own section (see docs/roadmap.md, U1).
-- Never put bytes, cost, money amounts, accuracy, precision or recall in this table.
--->
-**Results.** Measured on [date], window [first]..[last], seed [s], as of [A], commit [sha]. Source: [`docs/evidence/2026-11-02/summary.json`](docs/evidence/2026-11-02/summary.json).
+**Results.** Measured on 2026-11-02, window 2026-10-03..2026-11-01, seed 20261101, as of 2026-11-01, commit `ae8e1a2eaaa09d5931794879cb225f3a7e9301fe`. N1 and N2 are measured on synthetic payments; N3 is measured on real NBK rates. Source: [`docs/evidence/2026-11-02/summary.json`](docs/evidence/2026-11-02/summary.json).
 
 | # | What was measured | Reproduce (in this order) |
 |---|---|---|
-| N1 | Reprocessed [D] days and re-ran 1 older day out of order: [P] of [P] partitions identical ([R] rows fingerprinted). | `make snapshot`, `make reprocess`, `make clear-day`, `make snapshot`, `make compare` ([steps](#n1-rerun-proof)) |
-| N2 | [M] MID-days reconciled with [U] minor units unexplained: each MID-day's revenue-minus-statement gap equals the sum of its dated reason codes, computed two independent ways. [K] of [K] deliberate code mutations turned a test red. | `make results` ([query](#n2-cross-ledger-identity)) |
-| N3 | Real NBK rates: on [W] of [C] weekend and holiday days, carrying the last weekday rate forward differed from NBK's own published rate by up to [X] KZT per USD ([Y] bps); weekday rates agreed exactly on [E] of [E] days. | `make fx-report` ([method](#n3-real-nbk-weekend-gap)) |
-
-<!--
-FILL: One screenshot of the outcome: the exceptions queue (run dbt/analyses/exceptions_queue.sql in the BigQuery console). Crop it so no project id shows. Save it as docs/img/exceptions_queue.png. If you have no screenshot when you publish, delete the image line.
--->
-![Exceptions queue: one row per payment and cause, synthetic data](docs/img/exceptions_queue.png)
+| N1 | Reprocessed 7 days and re-ran 1 older day out of order: 146 of 146 partitions identical (17595 rows fingerprinted). | `make snapshot`, `make reprocess`, `make clear-day`, `make snapshot`, `make compare` ([steps](#n1-rerun-proof)) |
+| N2 | 60 MID-days reconciled with 0 minor units unexplained: each MID-day's revenue-minus-statement gap equals the sum of its dated reason codes, computed two independent ways. 4 of 4 deliberate code mutations turned a test red. | `make results` ([query](#n2-cross-ledger-identity)) |
+| N3 | Real NBK rates: on 9 of 9 weekend and holiday days, carrying the last weekday rate forward differed from NBK's own published rate by up to 5.82 KZT per USD (130.0 bps); weekday rates agreed exactly on 20 of 20 days. | `make fx-report` ([method](#n3-real-nbk-weekend-gap)) |
 
 **Quickstart.** Needs Docker Desktop, uv, a BigQuery sandbox project with its key at `keys/sa.json`, and your project id in `.env`. Full steps: [Run it in full](#run-it-in-full).
 
-<!--
-FILL: Test these three commands from a clean clone (build plan step S10.3). make unpause works only after the scheduler has parsed the DAG. If it fails right after make up, wait until recon_daily shows in the UI, run it again, and add one short line here that says so.
--->
 ```bash
 make setup     # host venv, dbt packages, local folders, .env from .env.example (edit it once)
 make up        # build the image and start Airflow on http://localhost:8083
@@ -118,21 +42,13 @@ Links: [Design](docs/design.md) · [Defect catalog](docs/specs/data_and_generato
 
 ## Why this exists
 
-<!--
-FILL: 2-4 bullets, generic wording, your words. Map the project to questions that any subscription business with card payments has:
+Any subscription business that takes card payments has to answer these questions every day:
 - Does the revenue in the warehouse match what the payment provider settled, per merchant account and day?
 - Are duplicated or lost webhooks changing booked revenue?
-- Which differences are only timing (cut-offs, settlement lags) and which need an analyst today?
-- Are the fees inside the contract?
-Do not describe or name any real company.
--->
-- [WRITE: bullet 1]
-- [WRITE: bullet 2]
-- [WRITE: bullet 3]
+- Which differences are only timing (cut-offs and settlement lags), and which need an analyst today?
+- Are the fees the provider took inside the contract?
 
 ## Data
-
-<!-- FILL: Check every fact in this section against src/recon/world.toml, dbt/seeds/mids.csv and docs/specs/data_and_generator.md. Run the git log command below and keep the sentence "The defect catalog was committed before any matcher SQL" only if its output shows that order. -->
 
 ### Synthetic payments
 
@@ -201,8 +117,6 @@ The answer key (`landing/_truth/booking_date=YYYY-MM-DD.ndjson`) is gitignored a
 
 ### Data model
 
-<!-- FILL: Check every row against dbt/models/**/_*.yml and the schema JSON files. -->
-
 Raw tables (dataset `raw`; host runs use `raw_dev`):
 
 | Table | One row per | Partition | Cluster | Written by |
@@ -245,10 +159,7 @@ From `dbt/seeds/reason_codes.csv`. Each line in `fct_recon_lines` gets exactly o
 
 ### How a run works
 
-<!--
-FILL: 2-3 sentences, your words. Cover: one run owns one UTC arrival day; the data interval tells the run which day; each raw table gets exactly one partition replaced; dbt rebuilds the marts from all loaded days and stamps every row with as_of_date.
--->
-[WRITE: how one run works, in 2-3 sentences]
+One run owns one UTC arrival day, and it learns which day from its data interval, never from the clock. It replaces exactly one partition in each raw table, for that day only. Then dbt rebuilds the marts from all loaded days and stamps every row with `as_of_date`, the latest loaded arrival date.
 
 | Task | What it does | Safe to rerun because |
 |---|---|---|
@@ -277,9 +188,6 @@ Three dates:
 | Booking date | our revenue day: the capture time's UTC date | `int_ledger__captures.booking_date` |
 | Accounting date | the PSP's day for the sale: the capture time shifted by the MID's fixed UTC offset | `settlement_lines.accounting_date` |
 
-<!-- FILL: Screenshot of the Airflow grid after the backfill and the reprocess, all green, saved as docs/img/airflow_grid.png. Delete the image line if you have none. -->
-![Airflow grid: one green run per arrival day](docs/img/airflow_grid.png)
-
 ### One payment, end to end (synthetic example)
 
 `pay_20261020_kzt_00042`: 999000 tiyn (9,990.00 KZT), captured 2026-10-20 20:15:07 UTC on `mid_kzt_01`.
@@ -294,12 +202,7 @@ Three dates:
 
 ## Tests and data quality
 
-<!--
-FILL: 2-3 sentences, your words. Cover: why the identity is not a tautology (top-down and bottom-up come from different models, so a matcher that loses, duplicates or misdates a line turns it red), and what it does not check (whether each line got the right reason).
-Write "fails when" only about tests that the mutation check turned red.
-Keep "seen red before the logic existed" only if the "Planned red runs" table in docs/failure_log.md records those red runs.
--->
-[WRITE: the testing strategy in 2-3 sentences]
+The cross-ledger identity is not a tautology: the top-down gap comes from `int_ledger__captures` and `stg_psp__settlement_lines`, which never touch the matcher, while the bottom-up components come from `fct_recon_lines`. So a matcher that loses, duplicates or misdates a line turns `assert_recon_decomposition_closes` red: mutations 1, 3 and 4 below did exactly that. The identity does not check whether each line got the right reason; the unit tests UT1 and UT2 check that on hand-made rows, and both were seen red before the logic existed ("Planned red runs (not bugs)" in [`docs/failure_log.md`](docs/failure_log.md)).
 
 ### Three kinds of evidence
 
@@ -353,16 +256,14 @@ Unit tests run on the host only (`make dbt-build` or `make dbt-unit`). The DAG e
 
 ### Mutation check
 
-Each mutation was applied on a scratch branch; `dbt run` and then `dbt test` were run on the dev datasets; every red test was recorded and the change was reverted. Full record: [`docs/testing.md`](docs/testing.md).
-
-<!-- FILL: Copy the observed column from docs/testing.md. If a mutation stayed green, write that, and add a failure-log entry. If the mutation check did not run, delete this whole section and the mutation sentence in N2. -->
+Each mutation was applied on a scratch branch; `dbt run` and then `dbt test` were run on the dev datasets; every red test was recorded and the change was reverted. Caught: 4 of 4. Full record: [`docs/testing.md`](docs/testing.md).
 
 | # | Mutation | Expected red | Observed red |
 |---|---|---|---|
-| 1 | `FULL OUTER JOIN` changed to `INNER JOIN` in `fct_recon_lines` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` | [observed] |
-| 2 | `as_of_date < due_date` changed to `<=` | UT2 | [observed] |
-| 3 | `QUALIFY` removed from `stg_psp__payment_events` | unique `event_id`, unique `payment_id` | [observed] |
-| 4 | the statement-side `record_type = 'SALE'` filter moved after the join | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` | [observed] |
+| 1 | `FULL OUTER JOIN` changed to `INNER JOIN` in `fct_recon_lines` | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
+| 2 | `as_of_date < due_date` changed to `<=` | UT2 | `ut_lines_status_and_date_shift` (UT2) |
+| 3 | `QUALIFY` removed from `stg_psp__payment_events` | unique `event_id`, unique `payment_id` | `unique_stg_psp__payment_events_event_id`, `unique_int_ledger__captures_payment_id`, `unique_fct_recon_lines_payment_id`, `dbt_utils_unique_combination_of_columns_fct_recon_exceptions_payment_id__cause`, `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers` |
+| 4 | the statement-side `record_type = 'SALE'` filter moved after the join | `assert_recon_decomposition_closes`, `assert_no_money_lost_between_layers`, `ut_lines_status_and_date_shift` (UT2) |
 
 ### Python tests
 
@@ -407,33 +308,28 @@ Not probed: loading a partition dated 70 days back. The docs say it expires at o
 - Never a second sandbox project to reset the quota: the Google Cloud Terms forbid it. Plan B is the GCP Free Trial in a new project ([ADR-0001](docs/adr/0001-warehouse-bigquery-sandbox.md)).
 - Bytes are not a result here: each query is billed at least 10 MB, which dominates at this size.
 
-<!-- FILL: Copy from docs/evidence/2026-11-02/storage.json. Delete the line if make storage did not run. -->
-Measured with `make storage` on [date]: [N] bytes stored across [N] tables ([`storage.json`](docs/evidence/2026-11-02/storage.json)).
+Measured with `make storage` on 2026-11-02 (from `__TABLES__`): 5600870 logical bytes stored now, per dataset `raw` 2695225, `analytics` 1784864, `raw_dev` 663627, `analytics_dev` 457106 and `probe` 48 ([`storage.json`](docs/evidence/2026-11-02/storage.json)). The lifetime quota may count every byte ever written, so this is a lower bound.
 
 ## Design decisions
-
-<!-- FILL: Copy each status from the ADR file. "Proposed" means a draft not yet rewritten in your words. Planned at v1.0: 0001 to 0003 Accepted, the rest Proposed. -->
 
 Index: [`docs/adr/README.md`](docs/adr/README.md).
 
 | ADR | Decision | Status |
 |---|---|---|
-| [0001 Warehouse](docs/adr/0001-warehouse-bigquery-sandbox.md) | BigQuery sandbox, no billing, a DML-free design; Plan B is the GCP Free Trial in a new project | [status] |
-| [0002 Raw write path and time model](docs/adr/0002-raw-write-path-and-time-model.md) | one `WRITE_TRUNCATE` load job per table and arrival day into `table$YYYYMMDD`; three dates; marts as of the latest loaded arrival date | [status] |
-| [0003 Reconciliation method](docs/adr/0003-reconciliation-method.md) | exact match on `payment_id` in INT64 minor units; one status per line; dated additive components; identity and preservation as error tests | [status] |
-| [0004 FX policy](docs/adr/0004-fx-policy.md) | NBK via Frankfurter, stored as published, landed once and committed; the weekend carry-forward is a labelled convention | [status] |
-| [0005 Orchestration and run semantics](docs/adr/0005-orchestration-and-run-semantics.md) | `CronDataIntervalTimetable` at 00:00 UTC; exact days only through one-day backfills; history loaded newest first; a 1-slot dbt pool | [status] |
-| [0006 dbt runtime in Airflow](docs/adr/0006-dbt-runtime-in-airflow.md) | a BashOperator calling dbt in its own venv, with per-run target and log paths; Cosmos later | [status] |
-| [0007 Evaluation and answer key](docs/adr/0007-evaluation-and-answer-key.md) | the answer key is never loaded; a seeded self-test with raw counts; a held-out world only after the matcher is tagged | [status] |
-| [0008 Materialization and incremental](docs/adr/0008-materialization-and-incremental.md) | views and small full-rebuild tables in v1.0; one `copy_partitions` snapshot in v1.5 | [status] |
-| [0009 Window and expiry](docs/adr/0009-window-and-expiry.md) | a 28-day world ending yesterday (UTC); a 45-day write guard; evidence committed so numbers outlive the expiry | [status] |
-| [0010 Synthetic world design](docs/adr/0010-synthetic-world-design.md) | a standard-library generator, one random stream per purpose, files emitted by arrival date | [status] |
+| [0001 Warehouse](docs/adr/0001-warehouse-bigquery-sandbox.md) | BigQuery sandbox, no billing, a DML-free design; Plan B is the GCP Free Trial in a new project | Proposed |
+| [0002 Raw write path and time model](docs/adr/0002-raw-write-path-and-time-model.md) | one `WRITE_TRUNCATE` load job per table and arrival day into `table$YYYYMMDD`; three dates; marts as of the latest loaded arrival date | Proposed |
+| [0003 Reconciliation method](docs/adr/0003-reconciliation-method.md) | exact match on `payment_id` in INT64 minor units; one status per line; dated additive components; identity and preservation as error tests | Proposed |
+| [0004 FX policy](docs/adr/0004-fx-policy.md) | NBK via Frankfurter, stored as published, landed once and committed; the weekend carry-forward is a labelled convention | Proposed |
+| [0005 Orchestration and run semantics](docs/adr/0005-orchestration-and-run-semantics.md) | `CronDataIntervalTimetable` at 00:00 UTC; exact days only through one-day backfills; history loaded newest first; a 1-slot dbt pool | Proposed |
+| [0006 dbt runtime in Airflow](docs/adr/0006-dbt-runtime-in-airflow.md) | a BashOperator calling dbt in its own venv, with per-run target and log paths; Cosmos later | Proposed |
+| [0007 Evaluation and answer key](docs/adr/0007-evaluation-and-answer-key.md) | the answer key is never loaded; a seeded self-test with raw counts; a held-out world only after the matcher is tagged | Proposed |
+| [0008 Materialization and incremental](docs/adr/0008-materialization-and-incremental.md) | views and small full-rebuild tables in v1.0; one `copy_partitions` snapshot in v1.5 | Proposed |
+| [0009 Window and expiry](docs/adr/0009-window-and-expiry.md) | a 28-day world ending yesterday (UTC); a 45-day write guard; evidence committed so numbers outlive the expiry | Proposed |
+| [0010 Synthetic world design](docs/adr/0010-synthetic-world-design.md) | a standard-library generator, one random stream per purpose, files emitted by arrival date | Proposed |
 
 ## Results and how they were measured
 
 Every number on the first screen comes from `docs/evidence/2026-11-02/`, written by the commands below from my own run. `summary.json` records the seed, world start, window, as_of date and git SHA. The table under [Evidence files](#evidence-files) lists what each file holds.
-
-<!-- FILL: Replace the dates below with the ones you actually used, if they changed. -->
 
 ### N1: rerun proof
 
@@ -465,18 +361,17 @@ The window starts on 2026-10-03, one day before the world start, because a USD c
 | U | `SUM(ABS(unexplained_minor))`; the claim is used only if U is 0 and the latest run's `assert_recon_decomposition_closes` passed |
 | K | from [`docs/testing.md`](docs/testing.md): mutations that turned a test red, of mutations applied |
 
-<!-- FILL: Keep this query identical to the one in scripts/results.py. -->
 ```sql
-select count(*)                          as mid_days,
-       sum(abs(unexplained_minor))       as abs_unexplained_minor,
-       countif(unexplained_minor != 0)   as days_not_closing,
-       min(recon_date)                   as first_day,
-       max(recon_date)                   as last_day,
-       max(as_of_date)                   as as_of
-from `{project}.analytics.fct_recon_daily`
+select count(*) as mid_days,
+       sum(abs(unexplained_minor)) as abs_unexplained_minor,
+       countif(unexplained_minor != 0) as days_not_closing,
+       min(recon_date) as first_day,
+       max(recon_date) as last_day,
+       max(as_of_date) as as_of_date
+from `{project}.{marts}.fct_recon_daily`
 ```
 
-How the identity works: [The cross-ledger identity](#the-cross-ledger-identity).
+This is `N2_SQL` in `scripts/results.py`; `make results` runs it with `{marts}` set to `analytics`. How the identity works: [The cross-ledger identity](#the-cross-ledger-identity).
 
 ### N3: real NBK weekend gap
 
@@ -502,11 +397,7 @@ Method: `scripts/fx_report.py` requests NBK's feed once per day (never for today
 | `fx_report.json` | `make fx-report` | the comparison behind N3 |
 | `storage.json` | `make storage` | stored bytes per dataset |
 
-<!-- FILL: From v1.1 only, add a section "Seeded self-test (synthetic, not accuracy)" here, from the template under U1 in docs/roadmap.md. Never before v1.1, and never in the first-screen table. -->
-
 ## Limitations
-
-<!-- FILL: Never describe v1.0 as reconciling "all" revenue of any business. Add any limitation you found while building. -->
 
 - One PSP (`psp_alpha`) and two MIDs, each charging and settling in its own currency. FX feeds USD reporting columns only; the reconciliation never converts currency.
 - Not reconciled in v1.0: refunds, chargebacks, reserves, payouts and bank arrival, presentment against settlement currency, cascades and approval rates, test transactions, app-store revenue, revenue recognition over the service period.
@@ -528,8 +419,7 @@ Method: `scripts/fx_report.py` requests NBK's feed once per day (never for today
 
 ## Roadmap: what I would do next
 
-<!-- FILL: Keep this short. The details, and the concept each step teaches, are in docs/roadmap.md. Mark each tag as it ships. -->
-[WRITE: 1-2 sentences in your words: what you would do next, and why]
+Next I would add the unit tests UT3 and UT4 and the seeded self-test (v1.1), because the integrity tests show that no minor unit is lost, duplicated or misdated, but not that each line got the right reason. After that comes CI, so that every push runs the checks I now run by hand.
 
 Next, in a fixed order. Each step ends with a git tag.
 
@@ -547,23 +437,17 @@ Later: v1.x (a Postgres source extracted on a watermark, refunds and chargebacks
 
 ## How I used AI
 
-<!--
-FILL: Keep this section true and in the first person: leave out anything below that did not happen, and add anything that did. Points the plan expects, if they stayed true:
-1. The planning documents (docs/design.md, docs/build_plan.md, docs/specs/, docs/learning/concepts.md, docs/roadmap.md and the ADR drafts) were drafted with an AI assistant before the build and reviewed by you. Each starts with a line saying so. An ADR is marked Accepted only after you rewrote it in your own words.
-2. This README started from a skeleton drafted with AI: the headings, tables, command lists and fact lists. Say which parts you rewrote, and that you checked every row against the code. You wrote the prose.
-3. An AI coding agent built the code and drafted the docs by following the plan step by step (AGENTS.md, "Build mode"). Every commit it made says "written with AI", so `git log --grep "written with AI"` lists them, and docs/build_journal.md records every step.
-4. What the owner did: chose the problem and the constraints, reviewed the plan, did the Google Cloud setup, reviewed the result and studied every file (docs/walkthrough.md). Add anything he changed himself.
-5. How you verified: pytest and dbt tests, the G0 probes, the mutation check (docs/testing.md), the rerun proof, and an explain-any-file drill without notes.
-6. One honest example of something AI got wrong and how you caught it, if it happened. Link the failure-log entry.
-7. The rules AI agents follow in this repo are in AGENTS.md.
--->
-[WRITE: how I used AI, in my own words]
+- An AI coding agent built this project. It wrote the code, core logic included, and drafted the docs, this README included, by following `docs/build_plan.md` step by step under the rules in [`AGENTS.md`](AGENTS.md) ("Build mode"). Every commit it made says "written with AI", so `git log --grep "written with AI"` lists them, and [`docs/build_journal.md`](docs/build_journal.md) records every step with its commands and their real output.
+- The planning documents (`docs/design.md`, `docs/build_plan.md`, `docs/specs/`, `docs/learning/concepts.md`, `docs/roadmap.md` and the ADR drafts) were drafted with an AI assistant before the build and reviewed by me. Each starts with a line saying so. All ten ADRs are still "Proposed": an ADR is marked Accepted only after I rewrite it in my own words.
+- This README started from a skeleton drafted with AI: the headings, tables, command lists and fact lists. The agent wrote its prose from the measured evidence and checked the rows against the code.
+- What I did: I chose the problem and the constraints ($0, the BigQuery sandbox, synthetic payments with real FX), reviewed the plan, did the Google Cloud setup (the sandbox project, the service account and its key), and I study the result file by file.
+- How the work was checked: pytest and dbt tests, the G0 probes, the mutation check ([`docs/testing.md`](docs/testing.md), 4 of 4 caught) and the rerun proof (N1).
+- One thing the agent got wrong: it installed the pre-push hook by copying fixed line numbers out of the build plan after the plan had shifted by two lines, so the hook started with Markdown and broke. The hook's own test run caught it, and the hook is now copied between its code-fence markers ([F-001](docs/failure_log.md#f-001-the-pre-push-hook-was-installed-with-the-wrong-lines-of-the-plan-written-2026-11-02)).
 
 ## Run it in full
 
 ### Prerequisites
 
-<!-- FILL: Keep only the versions you actually ran. -->
 - macOS or Linux with Docker Desktop (or Docker Engine) running, at least 6 GB of memory for Docker and at least 10 GB of free disk.
 - uv (it installs Python 3.13 for the host tools), git and make.
 - A personal Google account. A school or work account must pick an organization, whose policies can block service-account keys.
@@ -574,7 +458,6 @@ Built and tested with macOS 26 on Apple Silicon, Docker 29.7.2 and uv 0.13.1.
 
 ### Setup
 
-<!-- FILL: If S1.2 failed and you used Application Default Credentials, replace steps 4 and 5 with the gcloud steps from docs/specs/bigquery_sandbox_and_costs.md. -->
 1. Clone the repo:
    ```bash
    git clone https://github.com/bainazarseitek/ledger-vs-statement.git && cd ledger-vs-statement
@@ -633,8 +516,8 @@ The window rule. The DAG accepts a run date R only if `RECON_WORLD_START <= R`, 
 A backfill creates runs for a range of dates. The DAG must be unpaused first.
 
 ```bash
-make backfill-dry FROM=2026-10-04 TO=2026-10-30   # lists the runs it would create
-make backfill FROM=2026-10-04 TO=2026-10-30       # the published history: world start to the day before the first scheduled run
+make backfill-dry FROM=2026-10-04 TO=2026-10-31   # lists the runs it would create
+make backfill FROM=2026-10-04 TO=2026-10-31       # the published history: world start to the day before the first scheduled run
 ```
 
 - Both targets pass `--run-backwards --max-active-runs 1`. Newest first means every run sees a contiguous history from its own date to the latest loaded day.
@@ -716,7 +599,6 @@ Then, when you are done with the project:
 
 ## Licence
 
-<!-- FILL: Keep the Apache licence header at the top of docker-compose.yaml. -->
-- Code and documentation: MIT, see [LICENSE](LICENSE). Copyright Bainazar Seitek.
+- Code and documentation: MIT, see [LICENSE](LICENSE), which names the copyright holder.
 - `docker-compose.yaml` is adapted from the Apache Airflow project's docker-compose file (Apache License 2.0) and keeps its licence header.
 - Exchange rates: National Bank of the Republic of Kazakhstan (nationalbank.kz), retrieved through Frankfurter (frankfurter.dev). The files in `landing/fx/` are third-party public data, included as published and not covered by the MIT licence. The cross-check files in `landing/fx/provider=nbk_rss/` come directly from NBK's own RSS feed, not through Frankfurter.
