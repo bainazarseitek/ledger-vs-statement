@@ -1609,4 +1609,105 @@ This follows `docs/build_plan.md` "S5.5 UT2 first, then `fct_recon_lines`", `fct
 2. *A ledger-only line has `due_date` 2026-10-28 and the as-of date is 2026-10-28. What is its status?*
    `missing_in_statement`. The due date is inclusive, so `in_transit` only holds while `as_of_date < due_date` (`pay_b` in UT2).
 
-Next step: S5.6, `fct_recon_daily` and the three integrity tests.
+## S5.6: `fct_recon_daily` and the three integrity tests
+
+**Date and commit:** 2026-11-02, `6c97a10`.
+
+**What was built:**
+- `dbt/models/marts/fct_recon_daily.sql`: the two-calendar bridge. It has one row per (MID, currency, day), with the gap, seven dated components, `unexplained_minor`, fees and the USD reporting columns.
+- `dbt/models/marts/_marts.yml`: its contract (`enforced: true`, `:95` to `:96`), column types and descriptions, and a unique test on (`mid`, `currency`, `recon_date`).
+- `dbt/tests/assert_recon_decomposition_closes.sql`, `dbt/tests/assert_no_money_lost_between_layers.sql` and `dbt/tests/assert_redeliveries_identical.sql`: three singular tests. A singular test is a SQL file that passes when it returns no rows.
+
+**How it works:**
+The gap is computed top-down, straight from the input models, and never passes through the matcher:
+
+`dbt/models/marts/fct_recon_daily.sql:25`
+```sql
+        c.booking_date as day,
+        count(*) as ledger_line_count,
+        sum(c.amount_minor) as ledger_gross_minor
+    from {{ ref('int_ledger__captures') }} as c
+```
+
+The statement side does the same with `stg_psp__settlement_lines` by `accounting_date` (`:33` to `:47`). The components come bottom-up from `fct_recon_lines` only (`:83` to `:142`). A matched line with a date shift adds +L on its booking date and -L on its accounting date (`:99` to `:104` and `:111` to `:116`). The amount difference L - S lands once, on the accounting date (`:88` to `:92`). One-sided lines add +L or -S on their own date. The identity subtracts the sum of the seven components from the gap:
+
+`dbt/models/marts/fct_recon_daily.sql:230`
+```sql
+        y.ledger_gross_minor - y.statement_gross_minor as gap_minor,
+        y.ledger_gross_minor - y.statement_gross_minor
+        - (
+            y.timing_cutoff_minor
+```
+
+The test then checks that this difference is zero, with no tolerance:
+
+`dbt/tests/assert_recon_decomposition_closes.sql:11`
+```sql
+where d.unexplained_minor != 0
+```
+
+The spine (`:68` to `:78`) crosses every MID in `mids` with every day between the earliest and latest input date, so a day with no activity shows zeros. The bounds use one `UNION ALL` column, not `LEAST(MIN(...), MIN(...))`, because `LEAST` returns NULL if any argument is NULL (`:49` to `:50`). Fees never enter the gross identity. USD columns are added only at the end, through `to_usd` (`:270` to `:274`).
+
+The identity alone cannot see a matched same-day line that was dropped with equal amounts, because it adds 0 to the gap. `assert_no_money_lost_between_layers.sql` therefore compares the count and sums per MID between each input model and the matcher's matching side:
+
+`dbt/tests/assert_no_money_lost_between_layers.sql:92`
+```sql
+where c.ledger_in_count is distinct from c.ledger_out_count
+```
+
+`assert_redeliveries_identical.sql` reads every raw delivery. It returns any `event_id` whose copies differ in a business field (`:15` to `:20`), because keeping the first copy is only safe if all copies agree.
+
+This follows ADR-0003 and "The two-calendar bridge and the identity (and why it is not a tautology)" in `docs/learning/concepts.md`. ADR-0003 rejects an identity checked against its own residual, because it can never fail. Whether each test actually turns red on a broken matcher is shown by the mutation check in S7.5, not yet.
+
+**Commands and output:**
+- `uv run dbt --version`: Core 1.12.6, bigquery 1.12.1.
+- `make dbt-build`:
+  ```text
+  39 of 49 PASS assert_no_money_lost_between_layers
+  47 of 49 OK created sql table model analytics_dev.fct_recon_daily [CREATE TABLE (18.0 rows, 403.7 KiB processed)]
+  48 of 49 PASS assert_recon_decomposition_closes
+  49 of 49 PASS dbt_utils_unique_combination_of_columns_fct_recon_daily_mid__currency__recon_date
+  Finished running 3 seeds, 2 table models, 36 data tests, 2 unit tests, 6 view models
+  Done. PASS=49 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=49
+  ```
+  `assert_redeliveries_identical` passed earlier in the same build. A warning about NUMERIC with unspecified precision on `units_per_usd`, `ledger_gross_usd`, `statement_gross_usd` and `gap_usd` is expected under the spec, and plain `numeric` was kept.
+- The done-when query through `recon.bq` (`use_cache=False`) on synthetic dev data:
+  ```text
+  [{'days_not_closing': 0, 'abs_unexplained_minor': 0}]
+  ```
+- Per-MID check (synthetic): `mid_kzt_01` and `mid_usd_01` each have 9 spine days, 2026-10-23 to 2026-10-31. `timing_cutoff_minor` sums to 0 over the window for both, as +L and -L cancel. No `units_per_usd` is NULL.
+- `make check`: 9 passed, exit 0. Em dash grep on `dbt`: exit 1 (clean). The grep for `insert|update|delete|merge|current_date|current_timestamp|float64|pow(` in the new files: no match.
+
+**What went wrong:** Nothing. The identity closed on the first build, so there is no failure-log entry. Some notes on deviations. `exception_count` and `exception_abs_minor` are left out until S7.2, as the plan says. `fx_carry_days` is not wrapped in `COALESCE(..., 0)`, because 0 would claim a fresh rate on a day whose `units_per_usd` is NULL. The banned-word grep could not run because the permission check denied it. The owner, or the pre-push hook, runs it before the next push.
+
+**Interview questions:**
+1. *Why is `unexplained_minor` not a tautology?*
+   The gap comes from `int_ledger__captures` and `stg_psp__settlement_lines`. The components come only from `fct_recon_lines`. If the matcher loses, duplicates or misdates a line, or uses a wrong sign, the two paths disagree and the difference is not zero. A residual defined as "gap minus explained" and then tested against itself could never fail.
+2. *Why is `assert_no_money_lost_between_layers` needed when the identity already closes?*
+   A matched line on the same day with L = S adds 0 to the gap and 0 to every component. If the matcher dropped it, the identity would still close. Comparing counts and sums per MID between the inputs and the matcher catches that case.
+
+## Explain check M5
+
+**1. Why a tie-break in QUALIFY?**
+
+Dedup keeps one delivery per `event_id` with `ROW_NUMBER()` (`dbt/models/staging/stg_psp__payment_events.sql:23` to `:26`), ordered by `e.delivered_ts, e.delivery_id`. Two copies can share a `delivered_ts`. Without `delivery_id` as the second key, `ROW_NUMBER` may rank the tied rows differently on each build. Then `first_delivery_id` and `first_arrival_date` could change between two builds of the same data, and the rerun proof's fingerprints could differ. `delivery_id` is unique per copy, so the same row wins every time.
+
+**2. Why must the FULL OUTER JOIN keep an equality?**
+
+BigQuery refuses a `FULL OUTER JOIN` whose condition has no equality between the two sides. The design also matches on one exact key: `on l.payment_id = s.payment_id` (`dbt/models/marts/fct_recon_lines.sql:82` to `:83`). An `OR` condition could match one statement line to several ledger lines, which would break the grain of one row per `payment_id` and count money twice. With the equality, each payment gets one row, and `has_ledger` and `has_statement` (`:64` to `:65`) tell which sides it was seen on.
+
+**3. Why can the identity test fail?**
+
+Its two sides come from different models. `gap_minor` is top-down: ledger totals from `int_ledger__captures` by `booking_date` (`dbt/models/marts/fct_recon_daily.sql:20` to `:31`) minus statement totals from `stg_psp__settlement_lines` by `accounting_date` (`:33` to `:47`). The seven components are bottom-up, built only from `fct_recon_lines` (`:83` to `:142`). `assert_recon_decomposition_closes.sql:11` returns any MID-day where they differ by even one minor unit. A matcher that loses a one-sided line, duplicates a line, puts +L or -L on the wrong day, uses a wrong sign or forgets a component makes the sides differ. On the synthetic dev data it returned 0 and 0. The mutation check in S7.5 will show which tests turn red for each planted break.
+
+**4. Why is there no `CURRENT_DATE()` in any model?**
+
+Statuses must depend only on the loaded data. "Today" comes from `max(a._arrival_date) as as_of_date` (`dbt/models/staging/stg_recon__as_of.sql:32`), and the matcher compares against it: `when t.has_ledger and t.as_of_date < t.due_date then 'in_transit'` (`dbt/models/marts/fct_recon_lines.sql:112`). With the wall clock, rebuilding the same data a day later would turn `in_transit` lines into `missing_in_statement`. The rerun proof would fail, and no result could be reproduced. ADR-0002 rejects `CURRENT_DATE()` for this reason.
+
+## Review of M5 (2026-11-02)
+
+Each M5 step was checked by two reviewers (one against the spec, one against the hard rules on DML, money, dates and tests), and every finding by two skeptics. Steps S5.1, S5.2, S5.3, S5.4 and S5.6 had no findings. In S5.5 two were confirmed: the UT2 red-run row in `docs/failure_log.md` named the wrong rows, so a dated correction was appended below the table (`0ca3dfc`; the row itself is kept, as the failure-log rules require), and the S5.1 to S5.5 journal entries were missing (`2a656ef`).
+
+One deliberate deviation is open for the owner. `docs/specs/dbt_project.md`, heading "fct_recon_daily", says every INT64 column of `fct_recon_daily` is wrapped in `COALESCE(..., 0)` so that a day without activity shows zeros. `fx_carry_days` is INT64 but is left unwrapped: it is not an activity count, and the same section says the FX columns may be NULL on a day before the first rate, so a 0 next to a NULL `units_per_usd` would claim a fresh rate that does not exist. Over the full window every day has a rate, so the output is the same either way.
+
+**Next step:** S6.1, `dags/recon_daily.py`.
