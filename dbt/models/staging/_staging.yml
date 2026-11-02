@@ -1,0 +1,136 @@
+version: 2
+
+models:
+  - name: stg_recon__as_of
+    description: "One row per build: the newest and the oldest loaded arrival day of payment_events, so no model reads the wall clock. SYNTHETIC."
+    columns:
+      - name: as_of_date
+        description: "Newest loaded arrival day, or the as_of_date var in host dev builds. Statuses are judged against it."
+        data_tests:
+          - not_null
+      - name: scope_start
+        description: "Oldest loaded arrival day up to as_of_date. One-sided lines dated before it are before_scope."
+        data_tests:
+          - not_null
+
+  - name: stg_psp__payment_events
+    description: "One row per webhook event that arrived on or before as_of_date, keeping the earliest delivery. SYNTHETIC."
+    columns:
+      - name: event_id
+        description: "Webhook event id, evt_<payment_id>_cap. The same on every redelivery. Primary key."
+        data_tests:
+          - unique
+          - not_null
+      - name: event_type
+        description: "payment.captured in v1.0."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["payment.captured"]
+      - name: payment_id
+        description: "PSP reference, shared with the statement line."
+      - name: order_id
+        description: "Order id. Not used for matching in v1.0."
+      - name: mid
+        description: "Merchant account."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('mids')
+                field: mid
+      - name: plan_id
+        description: "p1w, p4w or p12w."
+      - name: amount_minor
+        description: "Captured amount in minor units (INT64)."
+      - name: currency
+        description: "ISO 4217 code."
+      - name: event_ts
+        description: "Capture time, UTC."
+      - name: first_delivery_id
+        description: "The delivery that was kept: the earliest one."
+      - name: first_delivered_ts
+        description: "When the kept delivery reached the backend."
+      - name: first_arrival_date
+        description: "Arrival day of the kept delivery."
+      - name: copies_received
+        description: "Deliveries of this event loaded up to as_of_date. 1 means no redelivery."
+      - name: is_synthetic
+        description: "Always true."
+
+  - name: stg_psp__settlement_lines
+    description: "One row per settlement statement line that arrived on or before as_of_date. SYNTHETIC."
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "net_minor = gross_minor - fee_minor"
+    columns:
+      - name: line_id
+        description: "Statement line id, ln_<payment_id>. Primary key."
+        data_tests:
+          - unique
+          - not_null
+      - name: statement_id
+        description: "stmt_<mid>_<yyyymmdd of arrival>: the file the line came in."
+      - name: mid
+        description: "Merchant account."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('mids')
+                field: mid
+      - name: record_type
+        description: "SALE in v1.0."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["SALE"]
+      - name: payment_id
+        description: "PSP reference, shared with the webhook."
+        data_tests:
+          - not_null
+      - name: captured_ts
+        description: "The PSP's capture time, UTC."
+      - name: accounting_date
+        description: "The PSP's day for the sale."
+      - name: gross_minor
+        description: "Settled gross in minor units (INT64)."
+      - name: fee_minor
+        description: "PSP fee in minor units (INT64)."
+      - name: net_minor
+        description: "Gross minus fee in minor units (INT64)."
+      - name: currency
+        description: "Settlement currency."
+      - name: statement_arrival_date
+        description: "Arrival day of the statement file. Renamed from _arrival_date."
+      - name: is_synthetic
+        description: "Always true."
+
+  - name: stg_fx__rates
+    description: "One row per (provider, base, quote, rate_date): the first-seen published NBK rate. REAL."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [provider, base, quote, rate_date]
+    columns:
+      - name: provider
+        description: "nbk in v1.0."
+      - name: base
+        description: "USD."
+      - name: quote
+        description: "KZT."
+      - name: rate_date
+        description: "The date of the published rate."
+      - name: rate_text
+        description: "The exact published digits, for example 453.71."
+      - name: rate
+        description: "CAST(rate_text AS NUMERIC). KZT per 1 USD."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 300
+                max_value: 700
+              config:
+                where: "quote = 'KZT'"
+      - name: first_seen_arrival_date
+        description: "The fetch partition that first carried this rate date."
