@@ -2739,3 +2739,18 @@ The identity and the preservation test show that no minor unit is lost, duplicat
 **What went wrong:** nothing.
 
 **Next step:** owner-only. S10.4 sub-steps 4 to 7: visibility, description, topics and the private-window check.
+
+## S10.4 (finished): public, description, topics
+
+**Date:** 2026-11-02 (UTC). The owner ran sub-steps 4 to 7 (owner-only).
+
+**Commands and output:**
+- `gh repo view --json visibility,description,repositoryTopics`:
+  - `PUBLIC`;
+  - the description from S10.4 in `docs/build_plan.md`, word for word;
+  - the topics `reconciliation payments bigquery dbt airflow data-engineering data-quality idempotency fx-rates` (9).
+- The tag `v1.0` was already on GitHub. The S10.4 done-when check passes.
+
+**What went wrong:** nothing.
+
+**Next step:** none in the build. M0 to M10 are done. The owner studies `docs/walkthrough.md` and does its drill. The upgrades M11 to M17 start only if he asks.
